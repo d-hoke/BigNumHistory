@@ -1,22 +1,24 @@
 #pragma once
 #include "stdafx.h"
+#define BIGINT_SIZE 32
+typedef unsigned int chunk;
 class BigInt
 {
-	std::vector<unsigned char> data;
+	std::vector<chunk> data;
 
 	void carry(const int index);
 	char intToHex(unsigned char input) const;
 public:
 	BigInt(void) { }
-	BigInt(unsigned char assignment) {
+	BigInt(chunk assignment) {
 		data.push_back(assignment);
 	}
 	BigInt(double assign, int prec = 2) {
 		for (int i = 0; i < prec; i++) {
-			int t = (int)(floor(assign));
+			chunk t = (chunk)(floor(assign));
 			data.push_back(t);
 			assign -= t;
-			assign *= 256.0;
+			assign *= pow(2.0, BIGINT_SIZE);
 		}
 	}
 	~BigInt(void);
@@ -33,7 +35,7 @@ public:
 	void rmask(const BigInt &mask);
 	std::string get() const;
 	int numDigits() const {
-		return data.size() * 2;
+		return data.size() * BIGINT_SIZE / 4;
 	}
 };
 

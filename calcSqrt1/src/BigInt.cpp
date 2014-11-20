@@ -28,8 +28,8 @@ BigInt BigInt::operator<<(const int degree) const {
 	if (degree < 0) {
 		return r >> (degree * -1);
 	}
-	int s = degree / 8;
-	if (s != 0) { // if we're shifting by bytes and not just bits
+	int s = degree / BIGINT_SIZE;
+	if (s != 0) { // if we're shifting by chunks and not just bits
 		for (int b = 0; b < data.size(); b++) {
 			int i = b - s;
 			if (i >= 0) {
@@ -38,10 +38,10 @@ BigInt BigInt::operator<<(const int degree) const {
 			r.data[b] = 0;
 		}
 	}
-	s = degree % 8;
+	s = degree % BIGINT_SIZE;
 	for (int b = 0; b < data.size(); b++) {
 		if (b > 0) {
-			unsigned char p = r.data[b] >> (8 - s);
+			chunk p = r.data[b] >> (BIGINT_SIZE - s);
 			r.data[b - 1] |= p;
 		}
 		r.data[b] <<= s;
@@ -54,8 +54,8 @@ BigInt &BigInt::operator<<=(const int degree) {
 		*this >>= (degree * -1);
 		return *this;
 	}
-	int s = degree / 8;
-	if (s != 0) { // if we're shifting by bytes and not just bits
+	int s = degree / BIGINT_SIZE;
+	if (s != 0) { // if we're shifting by chunks and not just bits
 		for (int b = 0; b < data.size(); b++) {
 			int i = b - s;
 			if (i >= 0) {
@@ -64,10 +64,10 @@ BigInt &BigInt::operator<<=(const int degree) {
 			data[b] = 0;
 		}
 	}
-	s = degree % 8;
+	s = degree % BIGINT_SIZE;
 	for (int b = 0; b < data.size(); b++) {
 		if (b > 0) {
-			unsigned char p = data[b] >> (8 - s);
+			chunk p = data[b] >> (BIGINT_SIZE - s);
 			data[b - 1] |= p;
 		}
 		data[b] <<= s;
@@ -80,8 +80,8 @@ BigInt BigInt::operator>>(const int degree) const {
 	if (degree < 0) {
 		return r << (degree * -1);
 	}
-	int s = degree / 8;
-	if (s != 0) { // if we're shifting by bytes and not just bits
+	int s = degree / BIGINT_SIZE;
+	if (s != 0) { // if we're shifting by chunks and not just bits
 		for (int b = data.size() - 1; b >= 0; b--) {
 			int i = b + s;
 			while (i >= r.data.size()) {
@@ -91,11 +91,11 @@ BigInt BigInt::operator>>(const int degree) const {
 			r.data[b] = 0;
 		}
 	}
-	s = degree % 8;
+	s = degree % BIGINT_SIZE;
 	if (s != 0) {
 		r.data.push_back(0);
 		for (int b = r.data.size() - 2; b >= 0; b--) {
-			unsigned char p = r.data[b] << (8 - s);
+			chunk p = r.data[b] << (BIGINT_SIZE - s);
 			r.data[b + 1] |= p;
 			r.data[b] >>= s;
 		}
@@ -108,8 +108,8 @@ BigInt &BigInt::operator>>=(const int degree) {
 		*this <<= (degree * -1);
 		return *this;
 	}
-	int s = degree / 8;
-	if (s != 0) { // if we're shifting by bytes and not just bits
+	int s = degree / BIGINT_SIZE;
+	if (s != 0) { // if we're shifting by chunks and not just bits
 		for (int b = data.size() - 1; b >= 0; b--) {
 			int i = b + s;
 			while (i >= data.size()) {
@@ -119,11 +119,11 @@ BigInt &BigInt::operator>>=(const int degree) {
 			data[b] = 0;
 		}
 	}
-	s = degree % 8;
+	s = degree % BIGINT_SIZE;
 	if (s != 0) {
 		data.push_back(0);
 		for (int b = data.size() - 2; b >= 0; b--) {
-			unsigned char p = data[b] << (8 - s);
+			chunk p = data[b] << (BIGINT_SIZE - s);
 			data[b + 1] |= p;
 			data[b] >>= s;
 		}
@@ -137,7 +137,7 @@ BigInt BigInt::operator+(const BigInt &_other) const {
 		r.data.push_back(0);
 	}
 	for (int b = 0; b < _other.data.size(); b++) {
-		unsigned char p = r.data[b];
+		chunk p = r.data[b];
 		r.data[b] += _other.data[b];
 		if (r.data[b] < p) {
 			r.carry(b - 1);
@@ -161,9 +161,11 @@ BigInt &BigInt::operator+=(const BigInt &_other) {
 		data.push_back(0);
 	}
 	for (int b = 0; b < _other.data.size(); b++) {
-		unsigned char p = data[b];
-		data[b] += _other.data[b];
-		if (data[b] < p) {
+		chunk p = data[b];
+		chunk o = _other.data[b];
+		o += p;
+		data[b] = o;
+		if (o < p) {
 			carry(b - 1);
 		}
 	}
@@ -175,10 +177,10 @@ BigInt BigInt::operator*(const BigInt &_other) const {
 	BigInt t;
 	for (int b = 0; b < data.size(); b++) {
 		if (data[b]) {
-			for (int i = 0; i < 8; i++) {
+			for (int i = 0; i < BIGINT_SIZE; i++) {
 				if ((data[b] & (1 << i)) != 0) {
 					t = _other;
-					t <<= (i - b * 8);
+					t <<= (i - b * BIGINT_SIZE);
 					r += t;
 				}
 			}
@@ -196,29 +198,40 @@ BigInt BigInt::operator~() const {
 }
 
 void BigInt::rmask(const BigInt &mask) {
-	int numOk;
-	for (numOk = 0; mask.data[numOk] == 0; numOk++) {
+	int chunksOk;
+	for (chunksOk = 0; mask.data[chunksOk] == 0; chunksOk++) {
 	}
-	while (data.size() > numOk) {
+	int digitsOk;
+	chunk t = mask.data[chunksOk] & (0xF << (BIGINT_SIZE - 4));
+	for (digitsOk = 0; (mask.data[chunksOk] & (0xFU << (BIGINT_SIZE - 4 - digitsOk * 4))) == 0; digitsOk++) {
+	}
+	data[chunksOk] &= (~0 << (BIGINT_SIZE - 4 * digitsOk));
+	chunksOk++;
+	while (data.size() > chunksOk) {
 		data.pop_back();
 	}
 }
 
 std::string BigInt::get() const {
 	std::string s;
+	int chars = 0;
 	for (int i = 0; i < data.size(); i++) {
-		if (i % 5 == 1) {
-			s += " ";
+		chunk t = data[i];
+		for (int j = (BIGINT_SIZE / 4) - 1; j >= 0; j--) {
+			unsigned char n = t >> (j * 4);
+			n &= 0xF;
+			if (i != 0 || n != 0 || j == 0) {
+				s += intToHex(n);
+				if (i != 0) {
+					chars++;
+				}
+				if (chars % 10 == 0) {
+					s += " ";
+				}
+			}
 		}
-		unsigned char t = data.at(i);
-		unsigned char n = t >> 4;
-		if (i != 0 || n != 0) {
-			s += intToHex(n);
-		}
-		n = t & 0xF;
-		s += intToHex(n);
 		if (i == 0) {
-			s += ".";
+			s += ". ";
 		}
 	}
 	if (data.size() == 1) {
@@ -226,3 +239,26 @@ std::string BigInt::get() const {
 	}
 	return s;
 }
+
+//std::string BigInt::get() const {
+//	std::string s;
+//	for (int i = 0; i < data.size(); i++) {
+//		if (i % 5 == 1) {
+//			s += " ";
+//		}
+//		chunk t = data.at(i);
+//		chunk n = t >> 4;
+//		if (i != 0 || n != 0) {
+//			s += intToHex(n);
+//		}
+//		n = t & 0xF;
+//		s += intToHex(n);
+//		if (i == 0) {
+//			s += ".";
+//		}
+//	}
+//	if (data.size() == 1) {
+//		s += "0";
+//	}
+//	return s;
+//}

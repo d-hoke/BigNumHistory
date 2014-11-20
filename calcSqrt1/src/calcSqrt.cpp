@@ -22,13 +22,15 @@ int _tmain(int argc, _TCHAR* argv[])
 {
 	//std::cout << "BigInt:" << std::endl;
 	// S = 2
+	const int runs = 5;
 	double dT = 0.0;
 	int digits;
-	for (int a = 0; a < 5; a++) {
+	for (int a = 0; a < runs; a++) {
+		std::cout << "run " << a << std::endl;
 		int sT = timeGetTime();
 		BigInt x = 0.7;
-		for (int i = 0; i < 9; i++) {
-			//std::cout << "iteration " << i << std::endl;
+		for (int i = 0; i < 12; i++) {
+			std::cout << "iteration " << i << std::endl;
 			//std::cout << "x = " << x.get() << std::endl;
 			BigInt changeX = x * x;
 			//std::cout << "x * x = " << changeX.get() << std::endl;
@@ -42,8 +44,10 @@ int _tmain(int argc, _TCHAR* argv[])
 			x = x * changeX;
 			//std::cout << "x / 2 * (3.0 - x * x * 2) = " << x.get() << std::endl << std::endl;
 
-			if (i % 2 == 1) {
+			if (i > 1) {
+				//std::cout << "x has " << x.numDigits() << " digits." << std::endl;
 				prune(x);
+				//std::cout << "x has " << x.numDigits() << " digits." << std::endl;
 				//std::cout << "x = " << x.get() << std::endl;
 			}
 		}
@@ -52,17 +56,17 @@ int _tmain(int argc, _TCHAR* argv[])
 
 		x = x << 1; // *= S
 
-		std::cout << "square root of 2 is " << x.get() << std::endl;
+		//std::cout << "square root of 2 is " << x.get() << std::endl;
 		dT += (double)(timeGetTime() - sT) / 1000.0;
 		digits = x.numDigits();
 	}
 
-	dT /= 5.0;
+	dT /= runs;
 	double dps = digits / dT;
 
 	std::cout << digits << " digits, " << dT << " seconds, " << dps << " digits/sec" << std::endl;
 
-	//std::cin.get();
+	std::cin.get();
 	
 	//std::cout << "pausing for 5 seconds";
 	//for (int i = 0; i < 10; i++) {
