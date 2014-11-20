@@ -16,15 +16,17 @@ public:
 	static size_t getNumWorkItems(size_t numLimbs);
 
 	cl_mem limbs;
-	cl_mem carryBuffer;
+	cl_mem carry_d;
 	size_t numLimbs;
 
+	void setLimbs(cl_mem newLimbs, cl_mem newCarry, size_t newSize);
 	void rmask(const oclBigInt &mask);
 	void truncate();
-	oclBigInt &oldMul(const oclBigInt &n);
+	//oclBigInt &oldMul(const oclBigInt &n);
 	oclBigInt &baseMul(const oclBigInt &n);
 	oclBigInt &shiftMul(const oclBigInt &n, int minSize);
-	void carry(cl_mem &carry_d, cl_mem &needCarry_d, int minWidth);
+	void carry(cl_mem &carry_d, int minWidth);
+	void addCarry(cl_mem &buffer, cl_mem &carry_d, int minWidth);
 
 public:
 	static cl_context context;
@@ -43,6 +45,7 @@ public:
 	static cl_kernel oldMulKernel;
 	static cl_kernel carryOneKernel;
 	static cl_ulong time_baseMul;
+	static cl_ulong time_carry;
 	static cl_ulong time_carry2;
 	static cl_ulong time_fill;
 	static cl_ulong time_shr;
@@ -51,12 +54,15 @@ public:
 	static cl_ulong time_add;
 	static cl_ulong time_neg;
 	static cl_ulong time_carryOne;
+	static cl_mem needCarry_d;
 
+	static void init();
+	static void close();
 	static void resetProfiling();
 	static void printProfiling(int runs = 1, double bigTotal = 1.0);
 
 	oclBigInt(void);
-	oclBigInt(size_t size);
+	oclBigInt(size_t size) ;
 	oclBigInt(int i, unsigned int pos = 0U);
 	oclBigInt(double d, unsigned int prec = 2U);
 	oclBigInt(BigInt &n);
@@ -74,7 +80,7 @@ public:
 	BigInt toBigInt() const;
 	void verify();
 	size_t getNumLimbs() const { return numLimbs; }
-	oclBigInt &mul2(const oclBigInt &n, int minSize = 0x2);
+	oclBigInt &mul2(const oclBigInt &n, int minSize = 0x30000);
 	void resize(const size_t size);
 	void move(oclBigInt &n);
 

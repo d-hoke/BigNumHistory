@@ -13,6 +13,7 @@ class BigInt
 public:
 
 	void carry(const int index);
+	void addCarry(BigInt carry);
 	void rmask(const BigInt &mask);
 	char intToHex(unsigned char input) const { return input + (input > 9 ? 55 : 48); }
 	BigInt oldMul(const BigInt &n) const;

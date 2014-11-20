@@ -17,6 +17,64 @@ void BigInt::carry(const int index) {
 	}
 }
 
+void BigInt::addCarry(BigInt carry) {
+	cl_uint carry_g[512];
+	const int workgroupSize = 2;
+
+	for (int idx = 0; idx < workgroupSize; idx++) {
+		carry_g[idx] = 0;
+	}
+
+	int tSize = carry.numLimbs();
+	while (tSize > workgroupSize) {
+		const int width = tSize / workgroupSize + (tSize % workgroupSize == 0 ? 0 : 1);
+		for (int idx = 0; idx < workgroupSize; idx++) {
+			carry_g[idx] = 0;
+			cl_ulong curCarry = 0;
+			const int start = idx * width;
+			if (start < tSize) {
+				int end = idx * width + width;
+				end = end > tSize ? tSize : end;
+				//curCarry = idx < (workgroupSize - 1) ? carry_g[idx + 1] : 0;
+				curCarry = 0;
+				for (int i = end - 1; i >= start; i--) {
+					curCarry += carry.limbs[i];
+					curCarry += limbs[i];
+					limbs[i] = curCarry & 0xFFFFFFFF;
+					carry.limbs[i] = 0;
+					curCarry >>= 32;
+				}
+				carry_g[idx] = curCarry;
+			}
+		}
+		// barrier
+
+		for (int i = 1; i < workgroupSize; i++) {
+			carry.limbs[i * width - 1] = carry_g[i];
+		}
+
+		int newSize;
+		bool ok = true;
+		for (newSize = workgroupSize; newSize > 0 && ok == true; newSize--) {
+			if (carry_g[newSize - 1] != 0) {
+				ok = false;
+			}
+		}
+		tSize = newSize * width;
+	}
+
+	if (tSize > 0) {
+		cl_ulong curCarry = 0;
+		//cl_ulong curCarry = carry_g[1];
+		for (int i = tSize - 1; i >= 0; i--) {
+			curCarry += carry.limbs[i];
+			curCarry += limbs[i];
+			limbs[i] = curCarry & 0xFFFFFFFF;
+			curCarry >>= 32;
+		}
+	}
+}
+
 void BigInt::rmask(const BigInt &mask) {
 	int limbsOk;
 	for (limbsOk = 0; mask.limbs[limbsOk] == 0; limbsOk++) {
@@ -132,8 +190,8 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 			}
 		}
 	}
-	carry += carry2;
 	r += carry;
+	r += carry2;
 	return r;
 }
 
