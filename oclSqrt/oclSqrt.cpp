@@ -11,6 +11,9 @@ cl_int getContext(cl_context &_context, cl_device_id *_devices, cl_uint _numDevi
 cl_int getQueue(cl_command_queue &_queue, const cl_context &_context, const cl_device_id &_deviceId);
 cl_int oclInit(cl_context &context, cl_command_queue &queue, cl_program &program, char *sourceFileName);
 cl_int initKernels(cl_program program);
+void calcSqrt2();
+void checks();
+void profile();
 
 int _tmain(int argc, _TCHAR* argv[])
 {
@@ -27,153 +30,211 @@ int _tmain(int argc, _TCHAR* argv[])
 	oclBigInt::context = context;
 	oclBigInt::queue = queue;
 
-	//const bool useFile = false;
+	//calcSqrt2();
+	//checks();
+	profile();
 
-	//std::ofstream fOut;
-	//if (useFile) fOut.open("x.txt");
+	std::cout << "waiting for input to quit." << std::endl;
+	std::cin.get();
 
+	return 0;
+}
+
+void calcSqrt2() {
+	using std::cout; using std::endl;
+
+	const bool useFile = false;
+
+	std::ofstream fOut;
+	if (useFile) fOut.open("x.txt");
+
+	DWORD sT = timeGetTime();
+
+	oclBigInt x = 0.7;
+	oclBigInt add = 3U;
+	add >>= 1;
 	//DWORD sT = timeGetTime();
+	int lastOkLimbs;
+	for (int i = 0; i < 40; i++) {
+		//if (i > 2 && i % 2 == 0) {
+			//cout << "verify iteration " << i << endl;
+		//} else {
+			cout << "iteration " << i << endl;
+		//}
+		if (useFile) fOut << "verify iteration " << i << endl << endl;
+		oclBigInt t;
+		x.copy(t);
+		if (useFile) fOut << "t = x  : " << t << endl << endl;
 
-	//oclBigInt x = 0.7;
-	//oclBigInt add = 3U;
-	//add >>= 1;
-	//for (int i = 0; i < 24; i++) {
-	//	cout << "verify iteration " << i << endl;
-	//	if (useFile) fOut << "verify iteration " << i << endl << endl;
-	//	oclBigInt t;
-	//	x.copy(t);
-	//	if (useFile) fOut << "t = x  : " << t << endl << endl;
+		t *= x;
+		if (useFile) fOut << "t *= x : " << t << endl << endl;
 
-	//	t *= x;
-	//	if (useFile) fOut << "t *= x : " << t << endl << endl;
+		t.setNeg();
+		if (useFile) fOut << "t = ~t : " << t << endl << endl;
 
-	//	t.setNeg();
-	//	if (useFile) fOut << "t = ~t : " << t << endl << endl;
+		t += add;
+		if (useFile) fOut << "t += add : " << t << endl << endl;
 
-	//	t += add;
-	//	if (useFile) fOut << "t += add : " << t << endl << endl;
+		x *= t;
+		if (useFile) fOut << "x *= t : " << x << endl << endl;
 
-	//	x *= t;
-	//	if (useFile) fOut << "x *= t : " << x << endl << endl;
+		const int startResize = 7;
+		if (i == startResize) {
+			x.verify();
+			lastOkLimbs = x.getNumLimbs();
+		} else if (i > startResize) {
+			lastOkLimbs *= 2;
+			x.resize(lastOkLimbs);
+		}
 
-	//	if (i > 2 && i % 2 == 0) {
-	//		x.verify();
-	//		if (useFile) fOut << "verified : " << x << endl << endl;
-	//	}
+		//if (i > 2 && i % 2 == 0) {
+		//	x.verify();
+		//}
 
-	//	cout << "num limbs : " << x.getNumLimbs() << endl;
-	//	if (useFile) fOut << "************" << endl << endl;
-	//}
-	//x.verify();
-	//double t = (double)(timeGetTime() - sT) / 1000.0;
+		//oclBigInt b;
+		//x.copy(b);
+		//b.verify();
+		//std::cout << b.getNumLimbs() << "/" << x.getNumLimbs() << " digits." << endl << endl;
 
-	//if (useFile) fOut.close();
+		if (i > startResize) {
+			//x.verify();
+			//if (useFile) fOut << "verified : " << x << endl << endl;
+			//oclBigInt b;
+			//x.copy(b);
+			//b.verify();
+			double dT = (double)(timeGetTime() - sT) / 1000.0;
+			cout << dT << "s cur limbs : " << x.getNumLimbs() << endl << endl;
+			//cout << dT << "s num ok limbs : " << b.getNumLimbs() << endl << endl;
+		}
 
-	//x <<= 1;
-	//cout << "final num limbs : " << x.getNumLimbs() << endl;
-	//cout << t << "s" << endl;
+		if (useFile) fOut << "************" << endl << endl;
+	}
+	x.verify();
+	double t = (double)(timeGetTime() - sT) / 1000.0;
+
+	if (useFile) fOut.close();
+
+	x <<= 1;
+	cout << "final num limbs : " << x.getNumLimbs() << endl;
+	cout << t << "s" << endl;
 
 	//fOut.open("x.txt");
 	//fOut << x << endl;
 	//fOut.close();
 	//c.verify();
 	//cout << "sqrt(2) = " << x << endl;
+}
 
-	// **********
-	// * checks *
-	// **********
-
+void checks() {
+	using std::cout; using std::endl;
 	srand(time(0));
 
-	const size_t xSize = 0x4000;
-	const size_t ySize = xSize;
+	size_t xSize = 344;
+	size_t ySize = xSize;
 	cout << xSize << " limbs\n";
 
-	//while (true) {
-		//BigInt x(0U, xSize - 1);
-		//for (unsigned int i = 0; i < xSize; i++) {
-		//	x.set((rand() + (rand() << 16)), i);
-		//}
-	
-		//BigInt y(0U, ySize - 1);
-		//for (unsigned int i = 0; i < ySize; i++) {
-		//	y.set((rand() + (rand() << 16)), i);
-		//}
+	for (; true; xSize ++, ySize = xSize) {
+		BigInt x(0U, xSize - 1);
+		for (unsigned int i = 0; i < xSize; i++) {
+			x.set((rand() + (rand() << 16)), i);
+		}
 
-	//	//cout << "x = " << x << endl;
+		BigInt y(0U, ySize - 1);
+		for (unsigned int i = 0; i < ySize; i++) {
+			y.set((rand() + (rand() << 16)), i);
+		}
 
-	//	BigInt a = x;
-	//	a += y;
-	//	//a.setNeg();
-	//	//BigInt b = x.mulDigit(y);
-	//	oclBigInt o = x.toOcl();
-	//	o += y.toOcl();
-	//	//o.setNeg();
+		//cout << "x = " << x << endl;
 
-	//	BigInt b = o.toBigInt();
-	//
-	//	//cout << x << endl << a << endl << b << endl;
-	//	cout << (a == b) << " ";
-	//}
+		//BigInt a = x * y;
+		//BigInt aC = a;
+		//BigInt b = x.mulDigit(y, 0x1f);
+		//BigInt bC = b;
 
-	//a -= b;
-	//std::ofstream fOut("x.txt");
-	//fOut << a << endl;
-	//fOut.close();
+		oclBigInt a = x.toOcl();
+		a *= y.toOcl();
+		BigInt aC = a.toBigInt();
+		oclBigInt b = x.toOcl();
+		b.mul2(y.toOcl());
+		BigInt bC = b.toBigInt();
 
-	// **************
-	// * end checks *
-	// **************
+		//cout << x << endl << a << endl << b << endl;
+		cout << xSize << ":" << (aC == bC) << "\t";
+	}
+}
 
+void profile() {
+	using std::cout; using std::endl;
+
+	srand(time(0));
+	int runs = 2;
+	size_t xSize = 0x4;
+	size_t ySize = xSize;
+	size_t minSize = 18;
 	DWORD sT;
 	int numLimbs;
 	double dT;
-	for (int runs = 1; runs < 100; runs += runs) {
-		sT = timeGetTime();
-		for (int curRun = 0; curRun < runs; curRun++) {
-			oclBigInt x = 0.7;
-			oclBigInt add = 3U;
-			add >>= 1;
-			for (int i = 0; i < 24; i++) {
-				oclBigInt t;
-				x.copy(t);
-				t *= x;
-				t.setNeg();
-				t += add;
-				x *= t;
-				if (i > 2 && i % 2 == 0) {
-					x.verify();
-				}
-			}
-			x.verify();
-			numLimbs = x.getNumLimbs();
-		}
-		dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
-		cout << "sqrt(2) : x * y (" << runs << " runs)\t: " << dT << " limbs : " << numLimbs << endl;
-
+	for (; xSize < 0x10000; xSize *= 2, ySize = xSize) {
 		//sT = timeGetTime();
 		//for (int curRun = 0; curRun < runs; curRun++) {
-		//	BigInt x(0U, xSize - 1);
-		//	for (unsigned int i = 0; i < xSize; i++) {
-		//		x.set((rand() + (rand() << 16)), i);
+		//	oclBigInt x = 0.7;
+		//	oclBigInt add = 3U;
+		//	add >>= 1;
+		//	for (int i = 0; i < 24; i++) {
+		//		oclBigInt t;
+		//		x.copy(t);
+		//		t *= x;
+		//		t.setNeg();
+		//		t += add;
+		//		x *= t;
+		//		if (i > 2 && i % 2 == 0) {
+		//			x.verify();
+		//		}
 		//	}
-
-		//	BigInt y(0U, ySize - 1);
-		//	for (unsigned int i = 0; i < ySize; i++) {
-		//		y.set((rand() + (rand() << 16)), i);
-		//	}
-		//	x.toOcl() *= y.toOcl();
+		//	x.verify();
+		//	numLimbs = x.getNumLimbs();
 		//}
 		//dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
-		//cout << "v1 : x * y (" << runs << " runs)\t: " << dT << endl;
+		//cout << "sqrt(2) : x * y (" << runs << " runs)\t: " << dT << " limbs : " << numLimbs << endl;
+
+		cout << "limbs: " << xSize << endl;
+
+		sT = timeGetTime();
+		for (int curRun = 0; curRun < runs; curRun++) {
+			BigInt x(0U, xSize - 1);
+			for (unsigned int i = 0; i < xSize; i++) {
+				x.set((rand() + (rand() << 16)), i);
+			}
+
+			BigInt y(0U, ySize - 1);
+			for (unsigned int i = 0; i < ySize; i++) {
+				y.set((rand() + (rand() << 16)), i);
+			}
+
+			x.toOcl() *= y.toOcl();
+		}
+		dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
+		cout << "v1 : x * y (" << runs << " runs)\t: " << dT << endl;
+
+		sT = timeGetTime();
+		for (int curRun = 0; curRun < runs; curRun++) {
+			BigInt x(0U, xSize - 1);
+			for (unsigned int i = 0; i < xSize; i++) {
+				x.set((rand() + (rand() << 16)), i);
+			}
+
+			BigInt y(0U, ySize - 1);
+			for (unsigned int i = 0; i < ySize; i++) {
+				y.set((rand() + (rand() << 16)), i);
+			}
+
+			x.toOcl().mul2(y.toOcl());
+		}
+		dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
+		cout << "v2 : x * y (" << runs << " runs)\t: " << dT << endl;
 
 		cout << endl;
 	}
-
-	std::cout << "waiting for input to quit." << std::endl;
-	std::cin.get();
-
-	return 0;
 }
 
 void CL_CALLBACK contextError(const char *errInfo, const void *private_info, size_t cb, void *user_data) {
@@ -429,6 +490,22 @@ cl_int initKernels(cl_program program) {
 	printf("Program built.\n");
 
 	oclBigInt::countKernel = clCreateKernel(program, "count", &error);
+	if (error != CL_SUCCESS) {
+		printf("Error creating kernel: %i", error);
+		std::cin.get();
+		return error;
+	}
+	printf("Program built.\n");
+
+	oclBigInt::mul2Kernel = clCreateKernel(program, "mul2", &error);
+	if (error != CL_SUCCESS) {
+		printf("Error creating kernel: %i", error);
+		std::cin.get();
+		return error;
+	}
+	printf("Program built.\n");
+
+	oclBigInt::carry2Kernel = clCreateKernel(program, "carry2", &error);
 	if (error != CL_SUCCESS) {
 		printf("Error creating kernel: %i", error);
 		std::cin.get();

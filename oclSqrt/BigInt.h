@@ -32,7 +32,7 @@ public:
 	BigInt operator-(const BigInt &n) const;
 	BigInt &operator-=(const BigInt &n);
 	BigInt operator*(const BigInt &n) const;
-	BigInt mulDigit(const BigInt &n) const;
+	BigInt mulDigit(const BigInt &n, int minSize) const;
 	//BigInt &operator*=(const BigInt &n);
 	bool operator==(const BigInt &n) const;
 	bool operator>(const unsigned int other) const;
@@ -44,6 +44,7 @@ public:
 	std::string get() const;
 	size_t numLimbs() const { return limbs.size(); }
 	oclBigInt toOcl();
+	void truncate();
 
 	friend std::ostream& operator<<(std::ostream &os, const BigInt &n);
 };

@@ -9,7 +9,7 @@ class oclBigInt
 {
 	static const size_t workItemsPerGroup = 512;
 
-public:
+//public:
 	// size in 32-bits
 	static void fillBuffer(cl_mem buffer, unsigned int pattern, unsigned int offset, unsigned int size);
 	static size_t getNumWorkItems(size_t numLimbs);
@@ -17,7 +17,6 @@ public:
 	cl_mem limbs;
 	size_t numLimbs;
 
-	void resize(const size_t size);
 	void rmask(const oclBigInt &mask);
 	void truncate();
 
@@ -33,6 +32,8 @@ public:
 	static cl_kernel mulKernel;
 	static cl_kernel rmaskKernel;
 	static cl_kernel countKernel;
+	static cl_kernel mul2Kernel;
+	static cl_kernel carry2Kernel;
 
 	oclBigInt(void);
 	oclBigInt(unsigned int i, unsigned int pos = 0U);
@@ -53,6 +54,8 @@ public:
 	BigInt toBigInt() const;
 	void verify();
 	size_t getNumLimbs() const { return numLimbs; }
+	oclBigInt &mul2(const oclBigInt &n);
+	void resize(const size_t size);
 
 	friend std::ostream& operator<<(std::ostream &os, const oclBigInt &n);
 };
