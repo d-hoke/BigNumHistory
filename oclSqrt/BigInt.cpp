@@ -170,7 +170,9 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 		int multiplicand = curDigit - start;
 		unsigned long long curR = 0;
 		unsigned int farCarry = 0; // if curR overflows
+		//cout << endl << "start : " << start << " end : " << end << endl;
 		for (int i = start; i < end; i++, multiplicand = curDigit - i) {
+			//cout << "i : " << i << " m : " << multiplicand << " ";
 			unsigned long long p = curR;
 			unsigned long long t = (unsigned long long)n.limbs[i] * limbs[multiplicand];
 			curR += t;
@@ -182,9 +184,48 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 			}
 
 		}
+		//cout << endl;
 		r.limbs[curDigit] = (curR & 0xFFFFFFFF);
 		if (curDigit > 0) {
 			carry.limbs[curDigit - 1] += (curR >> 32);
+			if (curDigit > 1) {
+				carry2.limbs[curDigit - 2] += farCarry;
+			}
+		}
+	}
+	r += carry;
+	r += carry2;
+	return r;
+}
+
+BigInt BigInt::baseMul2(const BigInt &n) const {
+	using std::cout; using std::endl;
+
+	BigInt r(0U, n.numLimbs() + numLimbs() - 2);
+	BigInt carry(0U, n.numLimbs() + numLimbs() - 2);
+	BigInt carry2(0U, n.numLimbs() + numLimbs() - 2);
+	for (int curDigit = 0; curDigit < r.numLimbs(); curDigit++) {
+		// ********************
+		// * interesting guts *
+		// ********************
+		int start = curDigit - (n.numLimbs() - 1);
+		start = start < 0 ? 0 : start;
+		int end = (curDigit < numLimbs() ? curDigit : numLimbs() - 1);
+		uint64_t r_i = 0;
+		uint32_t farCarry = 0; // if curR overflows
+		//cout << endl << "start : " << start << " end : " << end << endl;
+		for (int j = start; j <= end; j++) {
+			//cout << "i : " << curDigit << " j : " << j << " m : " << (curDigit - j) << " ";
+			uint64_t t = (uint64_t)limbs[j] * n.limbs[curDigit - j];
+			if (r_i + t < r_i) {
+				farCarry++;
+			}
+			r_i += t;
+		}
+		//cout << endl;
+		r.limbs[curDigit] = (r_i & 0xFFFFFFFF);
+		if (curDigit > 0) {
+			carry.limbs[curDigit - 1] += (r_i >> 32);
 			if (curDigit > 1) {
 				carry2.limbs[curDigit - 2] += farCarry;
 			}
@@ -232,6 +273,12 @@ void BigInt::set(unsigned int i, unsigned int pos) {
 		limbs.resize(pos + 1, 0U);
 	}
 	limbs[pos] = (limb)i;
+}
+
+void BigInt::fill(unsigned int pattern, int ix_min, int ix_max) {
+	for (int i = ix_min; i < ix_max; i++) {
+		set(pattern, i);
+	}
 }
 
 BigInt BigInt::operator<<(const int d) const {
@@ -347,7 +394,7 @@ BigInt &BigInt::operator-=(const BigInt &n) {
 
 BigInt BigInt::operator*(const BigInt &n) const {
 	using std::cout; using std::endl;
-	const int minSize = 0x8; // must be > 4
+	const int minSize = 0x200; // must be > 4
 
 	// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
 	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)

@@ -18,6 +18,7 @@ public:
 	char intToHex(unsigned char input) const { return input + (input > 9 ? 55 : 48); }
 	BigInt oldMul(const BigInt &n) const;
 	BigInt baseMul(const BigInt &n) const;
+	BigInt baseMul2(const BigInt &n) const;
 	BigInt shiftMul(const BigInt &n, int minSize) const;
 
 public:
@@ -28,6 +29,7 @@ public:
 	~BigInt(void);
 
 	void set(unsigned int i, unsigned int pos);
+	void fill(unsigned int pattern, int ix_min, int ix_max);
 
 	BigInt operator<<(const int d) const;
 	BigInt &operator<<=(const int d);

@@ -1,8 +1,9 @@
 #pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable
 
-#define DEBUG_CL
+//#define DEBUG_CL
 #define ERROR_OUT_OF_BOUNDS  -1
 #define ERROR_BAD_PARAMETERS -2
+#define ERROR_OVERFLOW       -3
 
 #ifdef DEBUG_CL
 #define ERROR(errorCode, error, ixError, szError) \
@@ -84,8 +85,8 @@ __kernel void shl(__global const uint *src, __global uint *dst, const uint szDst
 // void shr(src, dst, szN, d)
 // expects BIGINT_LIMB_SIZE = 32, d > 0, dst initialized to 0
 #ifdef DEBUG_CL
-__kernel void shr(__global const uint *src, __global uint *dst, const uint szDst, int d,
-	__global int *error, __global int *ixError, uint szError) {
+__kernel void shr(__global const uint *src, __global uint *dst, const uint szDst,
+	int d, __global int *error, __global int *ixError, uint szError) {
 #else
 __kernel void shr(__global const uint *src, __global uint *dst, const uint szDst, int d) {
 #endif
@@ -363,197 +364,132 @@ __kernel void add(__global unsigned int *n1, __global unsigned int *n2, __global
 		n1[idx] = t & 0xFFFFFFFFU;
 		t >>= 32;
 		carry[idx] = t;
-		//if (idx > 0) {
-			//carry[idx - 1] = t;
-			//if (t > 0) {
-				//*needCarry = true;
-			//}
-		//} else {
-		//	carry[size - 1] = 0;
-		//}
 	}
 }
 
-//// old carry
-//// void oldMul(n1, n2, r, carry, size1, size2)
-//// perform only reads from n1 and n2, but each thread owns r[idx] and carry[idx - 1]
-//// expects workgroup size to be 512
-//__kernel void oldMul(__global const unsigned int *n1, __global const unsigned int *n2,
-//	__global unsigned int *r, __global unsigned int *carry, int size1, int size2) {
-//	const int localId = get_local_id(0);
-//	const int curDigit = get_global_id(0);
-//	const int sizeR = size1 + size2 - 2 + 1;
-//
-//	if(curDigit < sizeR) {
-//		ulong curR = 0;
-//		unsigned int largeSize = (size1 > size2 ? size1 : size2) - 1;
-//		int start = curDigit - largeSize;
-//		start = start < 0 ? 0 : start;
-//		int end = (curDigit < size2 - 1 ? curDigit + 1 : size2);
-//		for (int i = start; i < end; i++) {
-//			int multiplicand = curDigit - i;
-//			for (int curBit = 0; curBit < 32; curBit++) {
-//				if ((n2[i] & (1 << curBit)) != 0) {
-//					unsigned int addend = 0;
-//					addend |= (n1[multiplicand] << curBit);
-//					if (multiplicand + 1 < size1 && curBit != 0) {
-//						addend |= (n1[multiplicand + 1] >> (32 - curBit));
-//					}
-//					curR += addend;
-//				}
-//			}
-//		}
-//		if (curDigit < size2 - 1) {
-//			int multiplicand = -1;
-//			for (int curBit = 1; curBit < 32; curBit++) {
-//				if ((n2[curDigit + 1] & (1 << curBit)) != 0) {
-//					unsigned int addend = (n1[multiplicand + 1] >> (32 - curBit));
-//					curR += addend;
-//				}
-//			}
-//		}
-//		r[curDigit] = curR & 0xFFFFFFFF;
-//		if (curDigit > 0) {
-//			carry[curDigit - 1] = curR >> 32;
-//		} else {
-//			carry[sizeR - 1] = 0;
-//		}
-//	}
-//}
+void condenseCarry(__global uint *r, int sizeR, __local bool *lNeedCarry, __local uint *carry, int offset) {
+	const int curDigit = get_global_id(0);
+	const int localId = get_local_id(0);
 
-//// old carry
-//// void mul(n1, n2, r, carry, size1, size2)
-//// perform only reads from n1 and n2, but each thread owns r[idx]
-//// expects workgroup size to be 512
-//__kernel void mul(__global const unsigned int *n1, __global const unsigned int *n2,
-//	__global unsigned int *r, __global unsigned int *carry, int size1, int size2) {
-//	const int localId = get_local_id(0);
-//	const int curDigit = get_global_id(0);
-//	const int sizeR = size1 + size2 - 2 + 1;
-//	const int largeSize = (size2 > size1 ? size2 : size1) - 1;
-//
-//	if(curDigit < sizeR) {
-//		int start = curDigit - largeSize;
-//		start = start < 0 ? 0 : start;
-//		int end = (curDigit < size2 - 1 ? curDigit + 1 : size2);
-//		int multiplicand = curDigit - start;
-//		ulong curR = 0;
-//		uint farCarry = 0; // if curR overflows
-//		for (int i = start; i < end && multiplicand < size1; i++, multiplicand = curDigit - i) {
-//			ulong p  = curR;
-//			curR += (ulong)n2[i] * n1[multiplicand];
-//			if (curR < p) {
-//				int pf = farCarry;
-//				farCarry++;
-//				if (farCarry < pf) {
-//					for (int j = 0; j < sizeR; j++) {
-//						r[j] = 404;
-//						carry[j] = 0;
-//					}
-//				}
-//			}
-//		}
-//		r[curDigit] = (uint)(curR & 0xFFFFFFFF);
-//		if (curDigit > 0) {
-//			atomic_add(&carry[curDigit - 1], (curR >> 32));
-//			if (curDigit > 1) {
-//				atomic_add(&carry[curDigit - 2], farCarry);
-//			}
-//		}
-//	}
-//}
+	__local uint carryOverflow[512];
+
+	ulong curR = 0;
+	if (curDigit < sizeR && localId - offset >= 0) curR = r[curDigit - offset];
+	while (*lNeedCarry == true) {
+		if (curDigit < sizeR) {
+			curR += carry[localId];
+		}
+		if (localId > 0) {
+			carryOverflow[localId - 1] = (curR >> 32);
+		}
+		curR &= 0xFFFFFFFF;
+		barrier(CLK_LOCAL_MEM_FENCE);
+		if (localId == 0) {
+			*lNeedCarry = false;
+			for (int i = 0; i < 512 && curDigit + i < sizeR; i++) {
+				if (i < offset) {
+					carry[i] += carryOverflow[i];
+				} else {
+					carry[i] = carryOverflow[i];
+					if (carry[i] > 0) {
+						*lNeedCarry = true;
+					}
+				}
+			}
+			if (curDigit + 511 < sizeR) {
+				carry[511] = 0;
+			}
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+	}
+
+	//if (curDigit < sizeR) {
+	//	r[curDigit] = 404;
+	//}
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if (curDigit < sizeR && localId - offset >= 0) {
+		r[curDigit - offset] = curR;
+	}
+	//if (curDigit + 1 < sizeR && localId - offset >= 0) {
+	//	r[curDigit - offset] = curR;
+	//}
+	//if (localId < 511 && curDigit + 1 < sizeR) {
+	//	r[curDigit] = curR;
+	//}
+}
 
 // void mul2(n1, n2, r, carry, carry2, size1, size2)
 // perform only reads from n1 and n2, but each thread owns r[idx]
 // expects workgroup size to be 512
+__kernel void mul2(__constant unsigned int *n1, __constant unsigned int *n2,
+		__global unsigned int *r, __global unsigned int *carry,
 #ifdef DEBUG_CL
-__kernel void mul2(__global const unsigned int *n1, __global const unsigned int *n2,
-	__global unsigned int *r, __global unsigned int *carry, __global uint *carry2,
-	int size1, int size2) {
+		int sz_n1, int sz_n2,
+		__global int *error, __global int *ixError, uint szError) {
 #else
-__kernel void mul2(__global const unsigned int *n1, __global const unsigned int *n2,
-	__global unsigned int *r, __global unsigned int *carry, __global uint *carry2,
-	int size1, int size2) {
+		int sz_n1, int sz_n2) {
 #endif
 	const int localId = get_local_id(0);
 	const int curDigit = get_global_id(0);
-	const int sizeR = size1 + size2 - 2 + 1;
-	const int largeSize = (size2 > size1 ? size2 : size1) - 1;
+	const int sizeR = sz_n1 + sz_n2 - 2 + 1;
+	const int largeSize = (sz_n2 > sz_n1 ? sz_n2 : sz_n1) - 1;
 	__local uint ltCarry[512];
-	__local uint ltCarry2[512];
 	__local bool lNeedCarry;
+	__local uint ltCarry2[512];
+	__local bool lNeedCarry2;
 
 	if(curDigit < sizeR) {
-		int start = curDigit + 1 - size1;
+		int start = curDigit + 1 - sz_n1;
 		start = start < 0 ? 0 : start;
-		int end = (curDigit < size2 - 1 ? curDigit + 1 : size2);
+		int end = (curDigit < sz_n2 - 1 ? curDigit + 1 : sz_n2);
 		int multiplicand = curDigit - start;
 		ulong curR = 0;
 		uint farCarry = 0; // if curR overflows
 		for (int i = start; i < end; i++, multiplicand = curDigit - i) {
 			ulong p  = curR;
-			curR += (ulong)n2[i] * n1[multiplicand];
+			curR += (ulong)n2[i] * n1[multiplicand]; // access of n2 and n1
 			if (curR < p) {
 				farCarry++;
 			}
 		}
 
-
-		r[curDigit] = (uint)(curR & 0xFFFFFFFF);
+		r[curDigit] = (uint)(curR & 0xFFFFFFFF); // access of r
 		if (curDigit >= 0) {
 			curR >>= 32;
 			ltCarry[localId] = curR;
 			if (curR > 0) {
 				lNeedCarry = true;
-				//if (localId == 0) {
-				//	carry[curDigit] = curR;
-				//}
-				//carry[curDigit] = curR;
-				//*needCarry = true;
 			}
-			if (curDigit > 0 && farCarry > 0) {
-				carry2[curDigit - 1] = farCarry;
-				//*needCarry = true;
-			}
-		}
-	}
-	//if (localId == 0) lneedCarry = true;
-	barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
-	//if (curDigit < sizeR) carry[curDigit] = ltCarry[localId];
-	ulong curR;
-	if (curDigit < sizeR) curR = r[curDigit];
-	while (lNeedCarry == true) {
-		if (curDigit + 1 < sizeR && localId < 511) {
-			curR += ltCarry[localId + 1];
-			ltCarry2[localId] = (curR >> 32);
-			curR &= 0xFFFFFFFF;
-		}
-		barrier(CLK_LOCAL_MEM_FENCE);
-		if (localId == 0) {
-			lNeedCarry = false;
-			for (int i = 0; i < 512 && curDigit + i < sizeR; i++) {
-				if (i == 0) {
-					ltCarry[i] += ltCarry2[i];
-				} else {
-					ltCarry[i] = ltCarry2[i];
-					if (ltCarry[i] > 0) {
-						lNeedCarry = true;
-					}
+			if (curDigit > 0) {
+				//carry2[curDigit - 1] = farCarry;
+				ltCarry2[localId] = farCarry;
+				if (farCarry > 0) {
+					lNeedCarry2 = true;
 				}
 			}
-			if (curDigit + 511 < sizeR) {
-				ltCarry[511] = 0;
-			}
 		}
-		barrier(CLK_LOCAL_MEM_FENCE);
 	}
+	barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);
+
+	condenseCarry(r, sizeR, &lNeedCarry2, &ltCarry2, 2); // access of r
+
+	if (curDigit + 1 < sizeR && localId < 511) {
+#ifdef DEBUG_CL
+		if (ltCarry[localId] + ltCarry2[localId + 1] < ltCarry[localId]) {
+			ERROR(ERROR_OVERFLOW, error, ixError, szError);
+		}
+#endif
+		ltCarry[localId] += ltCarry2[localId + 1];
+	}
+
+	condenseCarry(r, sizeR, &lNeedCarry, &ltCarry, 1); // access of r
 
 	if (localId == 0 && curDigit < sizeR) {
 		carry[curDigit] = ltCarry[localId];
 	}
 
-	if (localId < 511 && curDigit + 1 < sizeR) {
-		r[curDigit] = curR;
+	if (localId == 0 && curDigit > 0) {
+		carry[curDigit - 1] = ltCarry2[localId];
 	}
 }
 
