@@ -5,6 +5,10 @@
 #include "BigInt.h"
 #include "oclBigInt.h"
 
+//#define USE_FILE
+//#define DEBUG_SQRT
+
+
 cl_int getPlatform(cl_platform_id &_platformId);
 cl_int getDevice(cl_device_id &_deviceId, const cl_platform_id &_platformId);
 cl_int getContext(cl_context &_context, cl_device_id *_devices, cl_uint _numDevices);
@@ -45,43 +49,78 @@ int _tmain(int argc, _TCHAR* argv[])
 void calcSqrt2() {
 	using std::cout; using std::endl;
 
-	const bool useFile = false;
-
+#ifdef USE_FILE
 	std::ofstream fOut;
-	if (useFile) fOut.open("x.txt");
+	fOut.open("x.txt");
+#endif
 
 	DWORD sT = timeGetTime();
 
 	oclBigInt x = 0.7;
-	oclBigInt add = 3U;
+	oclBigInt add = 3;
+#ifdef DEBUG_SQRT
+	BigInt cadd = add.toBigInt();
+	cadd = cadd >> 1;
+#endif
 	add >>= 1;
-	//DWORD sT = timeGetTime();
 	int lastOkLimbs;
 	oclBigInt::resetProfiling();
 	for (int i = 0; i < 30; i++) {
-		//if (i > 2 && i % 2 == 0) {
-			//cout << "verify iteration " << i << endl;
-		//} else {
-			cout << "iteration " << i << endl;
-		//}
-		if (useFile) fOut << "verify iteration " << i << endl << endl;
+		cout << "iteration " << i << endl;
 		oclBigInt t;
 		x.copy(t);
-		if (useFile) fOut << "t = x  : " << t << endl << endl;
-
 		t *= x;
-		if (useFile) fOut << "t *= x : " << t << endl << endl;
+
+#ifdef USE_FILE
+		fOut << "verify iteration " << i << endl << endl;
+		fOut << "x =    : " << x << endl << endl;
+		fOut << "t *= x : " << t << endl << endl;
+#endif
+#ifdef DEBUG_SQRT
+		BigInt ct = x.toBigInt();
+		ct = ct * ct;
+		if (!(t.toBigInt() == ct)) {
+			std::cout << "stop.";
+		}
+#endif
 
 		t.setNeg();
-		if (useFile) fOut << "t = ~t : " << t << endl << endl;
+
+#ifdef USE_FILE
+		fOut << "t = ~t : " << t << endl << endl;
+#endif
+#ifdef DEBUG_SQRT
+		ct.setNeg();
+		if (!(t.toBigInt() == ct)) {
+			std::cout << "stop.";
+		}
+#endif
 
 		t += add;
-		if (useFile) fOut << "t += add : " << t << endl << endl;
 
+#ifdef USE_FILE
+		fOut << "t += add : " << t << endl << endl;
+#endif
+#ifdef DEBUG_SQRT
+		ct += add.toBigInt();
+		if (!(t.toBigInt() == ct)) {
+			std::cout << "stop.";
+		}
+		BigInt cx = x.toBigInt();
+		cx = cx * ct;
+#endif
 		x *= t;
-		if (useFile) fOut << "x *= t : " << x << endl << endl;
 
-		const int startResize = 8;
+#ifdef DEBUG_SQRT
+		if (!(x.toBigInt() == cx)) {
+			std::cout << "stop.";
+		}
+#endif
+#ifdef USE_FILE
+		fOut << "x *= t : " << x << endl << endl;
+#endif
+
+		const int startResize = 7;
 		if (i == startResize) {
 			x.verify();
 			lastOkLimbs = x.getNumLimbs();
@@ -90,85 +129,70 @@ void calcSqrt2() {
 			x.resize(lastOkLimbs);
 		}
 
-		//if (i > 2 && i % 2 == 0) {
-		//	x.verify();
-		//}
-
-		//oclBigInt b;
-		//x.copy(b);
-		//b.verify();
-		//std::cout << b.getNumLimbs() << "/" << x.getNumLimbs() << " digits." << endl << endl;
-
 		if (i > startResize) {
-			//x.verify();
-			//if (useFile) fOut << "verified : " << x << endl << endl;
-			//oclBigInt b;
-			//x.copy(b);
-			//b.verify();
 			double dT = (double)(timeGetTime() - sT) / 1000.0;
 			cout << dT << "s cur limbs : " << x.getNumLimbs() << endl;
 			oclBigInt::printProfiling(1, dT);
 			oclBigInt::resetProfiling();
 			cout << endl;
-			//cout << dT << "s num ok limbs : " << b.getNumLimbs() << endl << endl;
 		}
 
-		if (useFile) fOut << "************" << endl << endl;
+#ifdef USE_FILE
+		fOut << "************" << endl << endl;
+#endif
+
 	}
 	x.verify();
 	double t = (double)(timeGetTime() - sT) / 1000.0;
 
-	if (useFile) fOut.close();
+#ifdef USE_FILE
+	fOut.close();
+#endif
 
 	x <<= 1;
 	cout << "final num limbs : " << x.getNumLimbs() << endl;
 	cout << t << "s" << endl;
-
-	//fOut.open("x.txt");
-	//fOut << x << endl;
-	//fOut.close();
-	//c.verify();
-	//cout << "sqrt(2) = " << x << endl;
 }
 
 void checks() {
 	using std::cout; using std::endl;
 	srand(time(0));
 
-	size_t xSize = 0x20000;
-	size_t ySize = xSize;
-	cout << xSize << " limbs\n";
+	size_t szX = 0x2;
+	size_t szY = szX;
+	cout << szX << " limbs\n";
 	bool read = false;
 
 	BigInt x, y;
 	if (read) {
 		//x.in("c_1.txt");
 		x.in("x.txt");
-		xSize = x.numLimbs();
+		szX = x.numLimbs();
 		//y.in("ct.txt");
 		y.in("y.txt");
-		ySize = y.numLimbs();
+		szY = y.numLimbs();
 	}
-	for (; true; ) {
+	for (; true; szY *= 2, szX = szY) {
 		//BigInt x(0U, xSize - 1);
 		if (!read) {
-			x.limbs.resize(xSize);
-			for (unsigned int i = 0; i < xSize; i++) {
+			x.limbs.resize(szX);
+			for (unsigned int i = 0; i < szX; i++) {
 				x.set((rand() + (rand() << 16)), i);
-				//x.set(0xffffffff, i);
+				x.set(0xffffffff, i);
 			}
-			y.limbs.resize(ySize);
-			for (unsigned int i = 0; i < ySize; i++) {
+			//x.set(0x0b91747b, 0);
+			//x.set(0x54a848ee, 1);
+			y.limbs.resize(szY);
+			for (unsigned int i = 0; i < szY; i++) {
 				y.set((rand() + (rand() << 16)), i);
-				//y.set(0xffffffff, i);
+				y.set(0xffffffff, i);
 			}
 		}
+		//int d = rand() % (szX * 32);
 
-		//cout << "x = " << x << endl;
-
-		//cout << "cpu : " << endl;
-		//BigInt a = x.mulDigit(y, xSize);
 		//BigInt a = x.baseMul(y);
+		//BigInt a = x << d;
+		//BigInt a = x + y;
 		//BigInt aC = a;
 		//BigInt b = x.baseMul(y);
 		//BigInt bC = b;
@@ -178,25 +202,23 @@ void checks() {
 
 		oclBigInt a;
 		oX.copy(a);
-		a.baseMul(oY); // Memory leak
+		a.mul2(oY);
+		//a.baseMul(oY);
 		BigInt aC = a.toBigInt();
 
-		//cout << "gpu: " << endl;
 		oclBigInt b;
 		oX.copy(b);
-		//b.baseMul(oY);
-		b.mul2(oY);
+		b.baseMul(oY);
+		//b.mul2(oY);
+		b.truncate();
+		//b += oY;
+		//b.mul2(oY);
+		//b <<= d;
 		BigInt bC = b.toBigInt();
 
-		//cout << x << endl << a << endl << b << endl;
 		bool ok = aC == bC;
-		cout << xSize << ":" << ok << "\t";
-		//if (ok == false && read == false) {
-		//	x.out("x.txt");
-		//	y.out("y.txt");
-		//	xSize /= 2;
-		//	ySize = xSize;
-		//}
+		//bool ok = true;
+		cout << szY << ":" << ok << "\t";
 	}
 }
 
@@ -264,9 +286,11 @@ void profile() {
 			//x * y;
 			oX.copy(tX);
 			oY.copy(tY);
+			//oclBigInt::fillBuffer(tX.limbs, 0, 0, tX.numLimbs);
 			//tX.addCarry(tX.limbs, tY.limbs, tY.getNumLimbs());
 			//tX += oY;
-			tX.mul2(tY, 0xc000);
+			//tX.baseMul(tY);
+			tX.mul2(tY);
 			//x.mulDigit(y, 0x200);
 		}
 		clFlush(oclBigInt::queue);
@@ -414,7 +438,8 @@ cl_int getDevice(cl_device_id &_deviceId, const cl_platform_id &_platformId) {
 
 cl_int getContext(cl_context &_context, cl_device_id *_devices, cl_uint _numDevices) {
 	cl_int error;
-	_context = clCreateContext(0,_numDevices, _devices, contextError, NULL, &error);
+	_context = clCreateContext(0,_numDevices, _devices, NULL, NULL, &error);
+	//_context = clCreateContext(0,_numDevices, _devices, contextError, NULL, &error);
 	if (error != CL_SUCCESS) {
 		printf("Error creating context: %i", error);
 		return error;
@@ -517,106 +542,56 @@ cl_int initKernels(cl_program program) {
 
 	// get kernel
 	oclBigInt::fillKernel = clCreateKernel(program, "fill", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
+	oclBigInt::safeCL(error, "create kernels", "fill");
 	printf("Program built.\n");
 
 	oclBigInt::shlKernel = clCreateKernel(program, "shl", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
+	oclBigInt::safeCL(error, "create kernels", "shl");
 	printf("Program built.\n");
 
 	oclBigInt::shrKernel = clCreateKernel(program, "shr", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
+	oclBigInt::safeCL(error, "create kernels", "shr");
 	printf("Program built.\n");
 
 	oclBigInt::addKernel = clCreateKernel(program, "add", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
-	printf("Program built.\n");
-
-	oclBigInt::carryKernel = clCreateKernel(program, "carry", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
+	oclBigInt::safeCL(error, "create kernels", "add");
 	printf("Program built.\n");
 
 	oclBigInt::negKernel = clCreateKernel(program, "neg", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
-	printf("Program built.\n");
-
-	oclBigInt::mulKernel = clCreateKernel(program, "mul", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
+	oclBigInt::safeCL(error, "create kernels", "neg");
 	printf("Program built.\n");
 
 	oclBigInt::rmaskKernel = clCreateKernel(program, "rmask", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
+	oclBigInt::safeCL(error, "create kernels", "rmask");
 	printf("Program built.\n");
 
 	oclBigInt::countKernel = clCreateKernel(program, "count", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
+	oclBigInt::safeCL(error, "create kernels", "count");
 	printf("Program built.\n");
 
 	oclBigInt::mul2Kernel = clCreateKernel(program, "mul2", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
+	oclBigInt::safeCL(error, "create kernels", "mul2");
 	printf("Program built.\n");
 
-	oclBigInt::carry2Kernel = clCreateKernel(program, "carry2", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
-	printf("Program built.\n");
-
-	oclBigInt::oldMulKernel = clCreateKernel(program, "oldMul", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
-	printf("Program built.\n");
+	//oclBigInt::carry2Kernel = clCreateKernel(program, "carry2", &error);
+	//oclBigInt::safeCL(error, "create kernels", "carry2");
+	//printf("Program built.\n");
 
 	oclBigInt::carryOneKernel = clCreateKernel(program, "carryOne", &error);
-	if (error != CL_SUCCESS) {
-		printf("Error creating kernel: %i", error);
-		std::cin.get();
-		return error;
-	}
+	oclBigInt::safeCL(error, "create kernels", "carryOne");
 	printf("Program built.\n");
+
+	oclBigInt::shortAddOffKernel = clCreateKernel(program, "shortAddOff", &error);
+	oclBigInt::safeCL(error, "create kernels", "shortAddOff");
+	printf("Program built.\n");
+
+	oclBigInt::checkAddKernel = clCreateKernel(program, "checkAdd", &error);
+	oclBigInt::safeCL(error, "create kernels", "checkAdd");
+	printf("Program built.\n");
+
+	oclBigInt::toggleKernel = clCreateKernel(program, "toggle", &error);
+	oclBigInt::safeCL(error, "create kernels", "toggle");
+	printf("Program built.\n");
+
+	return error;
 }

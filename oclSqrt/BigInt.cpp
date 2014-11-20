@@ -190,8 +190,6 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 			}
 		}
 	}
-	//carry += carry2;
-	//r = carry;
 	r += carry;
 	r += carry2;
 	return r;
@@ -255,18 +253,23 @@ BigInt &BigInt::operator<<=(const int d) {
 
 	const int bytes = d / 32;
 	const int bits = d % 32;
-	for (int i = 0; i < limbs.size(); i++) {
-		int indexedLimb = i - bytes;
-		if (indexedLimb >= 0) {
-			int shifted = limbs[i] << bits;
-			int overflow = limbs[i] >> (32 - bits);
-			limbs[indexedLimb] = shifted;
-			if (indexedLimb > 0 && bits > 0) {
-				limbs[indexedLimb - 1] |= overflow;
-			}
-		}
-		limbs[i] = 0;
+	for (int ixSrc = 0; ixSrc < bytes && ixSrc < limbs.size(); ixSrc++) {
+		limbs[ixSrc] = 0;
 	}
+	for (int ixSrc = bytes; ixSrc < limbs.size(); ixSrc++) {
+		int indexedLimb = ixSrc - bytes;
+		int shifted = limbs[ixSrc] << bits;
+		int overflow = limbs[ixSrc] >> (32 - bits);
+		limbs[ixSrc] = 0;
+		limbs[indexedLimb] = shifted;
+		if (indexedLimb > 0 && bits > 0) {
+			limbs[indexedLimb - 1] |= overflow;
+		}
+		
+	}
+	//int szNew = limbs.size() - bytes;
+	//szNew = szNew < 0 ? 0 : szNew;
+	//this->limbs.resize(szNew);
 
 	return *this;
 }
@@ -350,7 +353,9 @@ BigInt BigInt::operator*(const BigInt &n) const {
 	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
 
 	if (numLimbs() < minSize && n.numLimbs() < minSize) {
-		return this->baseMul(n);
+		BigInt r = this->baseMul(n);
+		r.truncate();
+		return r;
 	}
 
 	int p;
