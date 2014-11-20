@@ -40,7 +40,7 @@ BigInt BigInt::oldMul(const BigInt &n) const {
 	BigInt r(0U, n.numLimbs() + numLimbs() - 2);
 	BigInt carry(0U, n.numLimbs() + numLimbs() - 2);
 	for (int curDigit = 0; curDigit < r.numLimbs(); curDigit++) {
-		int start = curDigit - largeSize;
+		int start = curDigit + 1 - numLimbs();
 		start = start < 0 ? 0 : start;
 		int end = (curDigit < n.numLimbs() - 1 ? curDigit + 1 : n.numLimbs());
 		//int end = n.numLimbs();
@@ -105,13 +105,14 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 		// ********************
 		// * interesting guts *
 		// ********************
-		int start = curDigit - largeSize;
+		int start = curDigit + 1 - numLimbs();
 		start = start < 0 ? 0 : start;
+		//start = (start - curDigit > 
 		int end = (curDigit < n.numLimbs() - 1 ? curDigit + 1 : n.numLimbs());
 		int multiplicand = curDigit - start;
 		unsigned long long curR = 0;
 		unsigned int farCarry = 0; // if curR overflows
-		for (int i = start; i < end && multiplicand < numLimbs(); i++, multiplicand = curDigit - i) {
+		for (int i = start; i < end; i++, multiplicand = curDigit - i) {
 			unsigned long long p = curR;
 			unsigned long long t = (unsigned long long)n.limbs[i] * limbs[multiplicand];
 			curR += t;
@@ -258,12 +259,14 @@ BigInt &BigInt::operator+=(const BigInt &n) {
 	if (n.limbs.size() > limbs.size()) {
 		limbs.resize(n.limbs.size(), 0);
 	}
+	//BigInt carry(0, n.limbs.size());
 	for (size_t b = 0; b < n.limbs.size(); b++) {
 		limb p = limbs[b];
 		limb o = n.limbs[b];
 		o += p;
 		limbs[b] = o;
-		if (o < p) {
+		if (o < p && b > 0) {
+			//carry.limbs[b - 1] ++;
 			carry(b - 1);
 		}
 	}
@@ -271,6 +274,8 @@ BigInt &BigInt::operator+=(const BigInt &n) {
 }
 
 BigInt BigInt::operator-(const BigInt &n) const {
+	//BigInt t = n.neg();
+	//std::cout << t << std::endl;
 	return *this + n.neg();
 }
 BigInt &BigInt::operator-=(const BigInt &n) {
@@ -343,9 +348,124 @@ BigInt BigInt::operator*(const BigInt &n) const {
 	return c_0;
 }
 
-BigInt BigInt::mulDigit(const BigInt &n) const {
+// receives this & n *x^(1-p), returns r *x^(-2-2p)
+BigInt BigInt::shiftMul(const BigInt &n, int minSize) const {
 	using std::cout; using std::endl;
-	const int minSize = 0x8; // must be > 4
+	//const int minSize = 0x2; // must be > 4
+
+	// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
+	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
+
+	if (numLimbs() < minSize && n.numLimbs() < minSize) {
+		return (*this >> 64).baseMul(n >> 64);
+	}
+
+	int p;
+	// temp way to match size
+	if (n.numLimbs() > numLimbs()) { // num limbs / 2 rounded up
+		p = n.numLimbs() / 2 + n.numLimbs() % 2;
+	} else {
+		p = numLimbs() / 2 + numLimbs() % 2;
+	}
+
+	BigInt a_1 = *this;
+	for (int i = p; i < numLimbs(); i++) {
+		a_1.set(0, i);
+	}
+	a_1.limbs.resize(p); // m_1 * x^(1 - p)
+
+	BigInt a_0 = *this;
+	for (int i = 0; i < p; i++) {
+		a_0.set(0, i);
+	}
+	a_0 <<= (p * 32);
+	a_0.limbs.resize(p);
+
+	BigInt b_1 = n;
+	for (int i = p; i < n.numLimbs(); i++) {
+		b_1.set(0, i);
+	}
+	b_1.limbs.resize(p); // n_1 * x^(1 - p)
+
+	BigInt b_0 = n;
+	for (int i = 0; i < p; i++) {
+		b_0.set(0, i);
+	}
+	b_0 <<= (p * 32);
+	b_0.limbs.resize(p); // n_0 * x^(1 - p)
+
+	BigInt c_2 = a_1.shiftMul(b_1, minSize); // c_2 = m_1 * n_1 * x^(-2 - 2p)
+	BigInt c_0 = a_0.shiftMul(b_0, minSize); // c_0 = m_0 * n_0 * x^(-2 - 2p)
+
+	//cout << "a_1 : " << a_1 << endl;
+	//cout << "a_0 : " << a_0 << endl;
+	//cout << "b_1 : " << b_1 << endl;
+	//cout << "b_0 : " << b_0 << endl;
+	//cout << "c_2 : " << c_2 << endl;
+	//cout << "c_0 : " << c_0 << endl;
+
+	a_1 >>= 32;                             // m_1 * x^(-p)
+	a_0 >>= 32;                             // m_0 * x^(-p)
+	BigInt c_1 = (a_1 + a_0); 
+	BigInt o_a = c_1.limbs[0]; // overflow of addition
+
+	b_1 >>= 32;                             // n_1 * x^(-p)
+	b_0 >>= 32;                             // n_0 * x^(-p)
+	BigInt t = (b_1 + b_0); 
+	BigInt o_b = t.limbs[0]; // overflow of addition
+
+	BigInt t_a, t_b, t_c;
+	t_a =  t;
+	t_a.limbs[0] = 0;
+	t_b = c_1;
+	t_b.limbs[0] = 0;
+	t_c = o_a;
+
+	t_a = t_a.baseMul(o_a);
+	t_b = t_b.baseMul(o_b);
+	t_c = t_c.baseMul(o_b);
+	t_a >>= 64;
+	t_b >>= 64;
+	t_c >>= 64;
+
+	c_1 <<= 32; // c_1 = (m_1 + m_0) * x^(1-p)
+	c_1.limbs.resize(p);
+	t <<= 32;  // t = (n_1 + n_0) * x^(1-p)
+	t.limbs.resize(p);
+
+	//cout << "o_a : " << o_a << endl
+	//	<< "o_b : " << o_b << endl
+	//	<< "c_1 : " << c_1 << endl
+	//	<< "t_a : " << t_a << endl
+	//	<< "t_b : " << t_b << endl
+	//	<< "t_c : " << t_c << endl;
+
+	c_1 = c_1.shiftMul(t, minSize);               // (m_1 + m_0)(n_1 + n_0) * x^(-2 - 2p)
+	//cout << "shiftMul : " << c_1 << endl;
+	c_1 += t_a;
+	//cout << "+ t_a : " << c_1 << endl;
+	c_1 += t_b;
+	//cout << "+ t_b : " << c_1 << endl;
+	c_1 += t_c;
+	//cout << "+ t_c : " << c_1 << endl;
+	c_1 -= c_2;                             // ((m_1 + m_0)(n_1 + n_0) - r_2) * x^(-2 - 2p)
+	//cout << "- c_2 : " << c_1 << endl;
+	c_1 -= c_0;                             // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(-2 - 2p)
+	//cout << "- c_0 : " << c_1 << endl;
+	//cout << endl;
+
+	//c_2 <<= 4 * 32;     // c_2 = m_1 * n_1 * x^(-2-2p)
+	c_0 >>= (2 * p) * 32; // c_0 = m_0 * n_0 * x^(-2 - 4p)
+	c_1 >>= p * 32;       // c_1 = ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(-2 - 3p)
+
+	c_0 += c_2; // c_0 = R
+	c_0 += c_1;
+	return c_0;
+}
+
+BigInt BigInt::mulDigit(const BigInt &n, int minSize) const {
+	using std::cout; using std::endl;
+	//const int minSize = 0x8; // must be >= 2
 
 	// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
 	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
@@ -362,104 +482,10 @@ BigInt BigInt::mulDigit(const BigInt &n) const {
 		p = numLimbs() / 2 + numLimbs() % 2;
 	}
 
-	//if (p < minSize) {
-		BigInt a_1 = *this;
-		for (int i = p; i < numLimbs(); i++) {
-			a_1.set(0, i);
-		}
-		//a_1 >>= (32 + 32);
-		a_1.limbs.resize(p); // m_1 * x^(1 - p)
-		//a_1.truncate(); 
-
-		BigInt a_0 = *this;
-		for (int i = 0; i < p; i++) {
-			a_0.set(0, i);
-		}
-		a_0 <<= (p * 32 - 32 - 32);
-		a_0.truncate(); // m_0 / x^(p + 1)
-
-		BigInt b_1 = n;
-		for (int i = p; i < n.numLimbs(); i++) {
-			b_1.set(0, i);
-		}
-		//b_1 >>= (32 + 32);
-		b_1.limbs.resize(p); // n_1 * x^(1 - p)
-		//b_1.truncate(); 
-
-		BigInt b_0 = n;
-		for (int i = 0; i < p; i++) {
-			b_0.set(0, i);
-		}
-		b_0 <<= (p * 32 - 32 - 32);
-		b_0.truncate(); // n_0 / x^(p + 1)
-
-		BigInt c_2 = a_1.mulDigit(b_1); // c_2 = m_1 * n_1 * x^( 2 - 2p)
-		BigInt c_0 = a_0.mulDigit(b_0); // c_0 = m_0 * n_0 * x^(-2 - 2p)
-
-		a_1 >>= 64;                             // m_1 * (-1 - p)
-		BigInt c_1 = (a_1 + a_0);
-		b_1 >>= 64;                             // n_1 * (-1 - p)
-		BigInt t = (b_1 + b_0); 
-		c_1 = c_1.mulDigit(t);                  // (m_1 + m_0)(n_1 + n_0) * x^(-2p - 2)
-		c_2 >>= 128;
-		c_1 -= c_2;                             // ((m_1 + m_0)(n_1 + n_0) - r_2) * x^(-2p - 2)
-		c_1 -= c_0;                             // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(-2p - 2)
-
-		c_2 <<= 4 * 32;        // c_2 = m_1 * n_1 * x^(2-2p)
-		c_0 >>= (2 * p - 4) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
-		c_1 >>= (p - 4) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
-
-		c_0 += c_2; // c_0 = R
-		c_0 += c_1;
-		c_0.truncate();
-		return c_0;
-	//} else {
-	//	BigInt a_1 = *this;
-	//	for (int i = p; i < numLimbs(); i++) {
-	//		a_1.set(0, i);
-	//	}
-	//	//a_1 >>= (32 + 32);
-	//	a_1.truncate(); // m_1 * x^(1 - p)
-
-	//	BigInt a_0 = *this;
-	//	for (int i = 0; i < p; i++) {
-	//		a_0.set(0, i);
-	//	}
-	//	a_0 <<= (p * 32);
-	//	a_0.truncate(); // m_0 * x^(1 - p)
-
-	//	BigInt b_1 = n;
-	//	for (int i = p; i < n.numLimbs(); i++) {
-	//		b_1.set(0, i);
-	//	}
-	//	//b_1 >>= (32 + 32);
-	//	b_1.truncate(); // n_1 * x^(1 - p)
-
-	//	BigInt b_0 = n;
-	//	for (int i = 0; i < p; i++) {
-	//		b_0.set(0, i);
-	//	}
-	//	b_0 <<= (p * 32);
-	//	b_0.truncate(); // n_0 * x^(1 - p)
-
-	//	BigInt c_2 = a_1.mulDigit(b_1); // c_2 = m_1 * n_1 / x^(2p + 2)
-	//	BigInt c_0 = a_0.mulDigit(b_0); // c_0 = m_0 * n_0 / x^(2p + 2)
-
-	//	BigInt c_1 = (a_1 + a_0);
-	//	BigInt t = (b_1 + b_0); 
-	//	c_1 = c_1.mulDigit(t);          // (m_1 + m_0)(n_1 + n_0) * x^(2 - 2p)
-	//	c_1 -= c_2;                     // ((m_1 + m_0)(n_1 + n_0) - r_2) * x^(2 - 2p)
-	//	c_1 -= c_0;                     // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(2 - 2p)
-
-	//	//c_2 <<= 4 * 32;        // c_2 = m_1 * n_1 * x^(2-2p)
-	//	c_0 >>= (2 * p) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
-	//	c_1 >>= (p) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
-
-	//	c_0 += c_2; // c_0 = R
-	//	c_0 += c_1;
-	//	c_0.truncate();
-	//	return c_0;
-	//}
+	BigInt r = this->shiftMul(n, minSize);
+	r = r <<= (4 * 32);
+	r.limbs.resize(-1 + 4 * p);
+	return r;
 }
 
 bool BigInt::operator==(const BigInt &n) const {

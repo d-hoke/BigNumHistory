@@ -95,6 +95,7 @@ __kernel void carry(__global unsigned int *n, __global unsigned int *carry,
 				curCarry += n[i];
 				n[i] = curCarry & 0xFFFFFFFF;
 				curCarry >>= 32;
+				carry[idx] = 0;
 			}
 		}
 	}
@@ -106,7 +107,7 @@ __kernel void carry(__global unsigned int *n, __global unsigned int *carry,
 __kernel void carry2(__global unsigned int *n, __global unsigned int *carry, __global bool *needCarry,
 	int size) {
 	const int idx = get_global_id(0);
-	if (idx == 0 && *needCarry == true) {
+	if (idx == 0) {
 		ulong curCarry = 0;
 		for (int i = size - 1; i >= 0; i--) {
 			curCarry += carry[i];
@@ -239,13 +240,13 @@ __kernel void mul2(__global const unsigned int *n1, __global const unsigned int 
 	const int largeSize = (size2 > size1 ? size2 : size1) - 1;
 
 	if(curDigit < sizeR) {
-		int start = curDigit - largeSize;
+		int start = curDigit + 1 - size1;
 		start = start < 0 ? 0 : start;
 		int end = (curDigit < size2 - 1 ? curDigit + 1 : size2);
 		int multiplicand = curDigit - start;
 		ulong curR = 0;
 		uint farCarry = 0; // if curR overflows
-		for (int i = start; i < end && multiplicand < size1; i++, multiplicand = curDigit - i) {
+		for (int i = start; i < end; i++, multiplicand = curDigit - i) {
 			ulong p  = curR;
 			curR += (ulong)n2[i] * n1[multiplicand];
 			if (curR < p) {

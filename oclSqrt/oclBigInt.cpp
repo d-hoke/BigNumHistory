@@ -330,21 +330,11 @@ oclBigInt &oclBigInt::baseMul(const oclBigInt &n) {
 	}
 	fillBuffer(carry2_d, 0, 0, sizeR);
 
-	//bool needCarry_h = false;
-	//cl_mem needCarry_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-	//	sizeof(bool), &needCarry_h,  &error);
-	//if (error != CL_SUCCESS) {
-	//	std::cout << "Error in * : create bool buffer : " << error << std::endl;
-	//	std::cin.get();
-	//	exit(error);
-	//}
-
 	error = clSetKernelArg(oclBigInt::mul2Kernel, 0, sizeof(cl_mem), &limbs);
 	error |= clSetKernelArg(oclBigInt::mul2Kernel, 1, sizeof(cl_mem), &n.limbs);
 	error |= clSetKernelArg(oclBigInt::mul2Kernel, 2, sizeof(cl_mem), &r_d);
 	error |= clSetKernelArg(oclBigInt::mul2Kernel, 3, sizeof(cl_mem), &carry_d);
 	error |= clSetKernelArg(oclBigInt::mul2Kernel, 4, sizeof(cl_mem), &carry2_d);
-	//error |= clSetKernelArg(oclBigInt::mul2Kernel, 5, sizeof(cl_mem), &needCarry_d);
 	error |= clSetKernelArg(oclBigInt::mul2Kernel, 5, sizeof(int), &numLimbs);
 	error |= clSetKernelArg(oclBigInt::mul2Kernel, 6, sizeof(int), &n.numLimbs);
 	if (error != CL_SUCCESS) {
@@ -373,152 +363,114 @@ oclBigInt &oclBigInt::baseMul(const oclBigInt &n) {
 	limbs = r_d;
 	numLimbs = sizeR;
 
-	//clEnqueueReadBuffer(oclBigInt::queue, needCarry_d, CL_TRUE, 0, sizeof(bool), &needCarry_h,
-		//0, NULL, NULL);
-	//if (needCarry_h) {
-		carry(carry_d, sizeR);
-		carry(carry2_d, sizeR);
-	//}
+	cl_mem needCarry_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, sizeof(bool), NULL,
+			0);
+
+	carry(carry_d, needCarry_d, sizeR);
+	carry(carry2_d, needCarry_d, sizeR);
 
 	clReleaseMemObject(carry_d);
-	//clReleaseMemObject(needCarry_d);
+	clReleaseMemObject(carry2_d);
+	clReleaseMemObject(needCarry_d);
 
 	return *this;
 
 }
 
-void oclBigInt::carry(cl_mem &carry_d, int minWidth) {
+void oclBigInt::carry(cl_mem &carry_d, cl_mem &needCarry_d, int minWidth) {
 	cl_event event_profile;
 	cl_ulong sT, eT;
 	cl_int error;
 
 	size_t workItems = getNumWorkItems(minWidth);
 
-	cl_mem n2_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, minWidth * sizeof(unsigned int), NULL, &error);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in carry : create n2 : " << error << std::endl;
-		std::cin.get();
-		exit(error);
-	}
-
-	int iterations;
-	for (iterations = 0; iterations < 2; iterations++) {
-		// setup
-		//needCarry_h = false;
-		//error = clEnqueueWriteBuffer(oclBigInt::queue, needCarry_d, CL_FALSE, 0, sizeof(bool), &needCarry_h,
-		//	0, NULL, NULL);
-		//if (error != CL_SUCCESS) {
-		//	std::cout << "Error in carry : write needCarry_d : " << error << std::endl;
-		//	std::cin.get();
-		//	exit(error);
-		//}
-		cl_mem swap = n2_d;
-		n2_d = carry_d;
-		carry_d = swap;
-		fillBuffer(carry_d, 0, 0, minWidth);
-
-		//if (iterations == 1) {
-		//	needCarry_h = false;
-		//	error = clEnqueueWriteBuffer(oclBigInt::queue, needCarry_d, CL_FALSE, 0, sizeof(bool),
-		//		&needCarry_h, 0, NULL, NULL);
-		//	if (error != CL_SUCCESS) {
-		//		std::cout << "Error in carry : write needCarry_d : " << error << std::endl;
-		//		std::cin.get();
-		//		exit(error);
-		//	}
-		//}
-
-		error = clSetKernelArg(oclBigInt::addKernel, 0, sizeof(cl_mem), &limbs);
-		error |= clSetKernelArg(oclBigInt::addKernel, 1, sizeof(cl_mem), &n2_d);
-		error |= clSetKernelArg(oclBigInt::addKernel, 2, sizeof(cl_mem), &carry_d);
-		//error |= clSetKernelArg(oclBigInt::addKernel, 3, sizeof(cl_mem), &needCarry_d);
-		error |= clSetKernelArg(oclBigInt::addKernel, 3, sizeof(int), &minWidth);
-		if (error != CL_SUCCESS) {
-			std::cout << "Error in carry : set add-carry args : " << error << std::endl;
-			std::cin.get();
-			exit(error);
-		}
-
-		error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::addKernel, 1, 0, &workItems,
-			&oclBigInt::workItemsPerGroup, 0, NULL, &event_profile);
-		if (error != CL_SUCCESS) {
-			std::cout << "Error in += : enqueue add-carry : " << error << std::endl;
-			std::cin.get();
-			exit(error);
-		}
-
-		if (oclBigInt::profile == true) {
-			clFlush(oclBigInt::queue);
-			clFinish(oclBigInt::queue);
-			clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &sT, NULL);
-			clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &eT, NULL);
-			oclBigInt::time_add += (eT - sT);
-		}
-		clReleaseEvent(event_profile);
-		//error = clEnqueueReadBuffer(oclBigInt::queue, needCarry_d, CL_TRUE, 0, sizeof(bool), &needCarry_h,
-		//	0, NULL, NULL);
-		//if (error != CL_SUCCESS) {
-		//	std::cout << "Error in carry : read needCarry_d : " << error << std::endl;
-		//	std::cin.get();
-		//	exit(error);
-		//}
-	}
-	//std::cout << iterations << std::endl;
-
-	clReleaseMemObject(n2_d);
-
-	//error = clEnqueueReadBuffer(oclBigInt::queue, needCarry_d, CL_TRUE, 0, sizeof(bool), &needCarry_h,
-	//	0, NULL, NULL);
+	//cl_mem n2_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, minWidth * sizeof(unsigned int), NULL, &error);
 	//if (error != CL_SUCCESS) {
-	//	std::cout << "Error in carry : read needCarry_d : " << error << std::endl;
+	//	std::cout << "Error in carry : create n2 : " << error << std::endl;
 	//	std::cin.get();
 	//	exit(error);
 	//}
 
-	bool needCarry_h;
-	cl_mem needCarry_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, sizeof(bool), NULL, &error);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in carry : create needCarry_d : " << error << std::endl;
-		std::cin.get();
-		exit(error);
-	}
+	//int iterations;
+	//for (iterations = 0; iterations < 2; iterations++) {
+	//	cl_mem swap = n2_d;
+	//	n2_d = carry_d;
+	//	carry_d = swap;
+	//	fillBuffer(carry_d, 0, 0, minWidth);
 
-	iterations = 0;
+	//	error = clSetKernelArg(oclBigInt::addKernel, 0, sizeof(cl_mem), &limbs);
+	//	error |= clSetKernelArg(oclBigInt::addKernel, 1, sizeof(cl_mem), &n2_d);
+	//	error |= clSetKernelArg(oclBigInt::addKernel, 2, sizeof(cl_mem), &carry_d);
+	//	error |= clSetKernelArg(oclBigInt::addKernel, 3, sizeof(int), &minWidth);
+	//	if (error != CL_SUCCESS) {
+	//		std::cout << "Error in carry : set add-carry args : " << error << std::endl;
+	//		std::cin.get();
+	//		exit(error);
+	//	}
+
+	//	error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::addKernel, 1, 0, &workItems,
+	//		&oclBigInt::workItemsPerGroup, 0, NULL, &event_profile);
+	//	if (error != CL_SUCCESS) {
+	//		std::cout << "Error in += : enqueue add-carry : " << error << std::endl;
+	//		std::cin.get();
+	//		exit(error);
+	//	}
+
+	//	if (oclBigInt::profile == true) {
+	//		clFlush(oclBigInt::queue);
+	//		clFinish(oclBigInt::queue);
+	//		clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &sT, NULL);
+	//		clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &eT, NULL);
+	//		oclBigInt::time_add += (eT - sT);
+	//	}
+	//	clReleaseEvent(event_profile);
+	//}
+
+	//clReleaseMemObject(n2_d);
+
+	//bool needCarry_h;
+	//if (error != CL_SUCCESS) {
+	//	std::cout << "Error in carry : create needCarry_d : " << error << std::endl;
+	//	std::cin.get();
+	//	exit(error);
+	//}
+
+	//iterations = 0;
 	//while (needCarry_h) {
-	needCarry_h = false;
-	error = clEnqueueWriteBuffer(oclBigInt::queue, needCarry_d, CL_FALSE, 0, sizeof(bool), &needCarry_h,
-		0, NULL, NULL);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in carry : write needCarry_d : " << error << std::endl;
-		std::cin.get();
-		exit(error);
-	}
+	//needCarry_h = false;
+	//error = clEnqueueWriteBuffer(oclBigInt::queue, needCarry_d, CL_FALSE, 0, sizeof(bool), &needCarry_h,
+	//	0, NULL, NULL);
+	//if (error != CL_SUCCESS) {
+	//	std::cout << "Error in carry : write needCarry_d : " << error << std::endl;
+	//	std::cin.get();
+	//	exit(error);
+	//}
 
-	error = clSetKernelArg(oclBigInt::carryKernel, 0, sizeof(cl_mem), &limbs);
-	error |= clSetKernelArg(oclBigInt::carryKernel, 1, sizeof(cl_mem), &carry_d);
-	error |= clSetKernelArg(oclBigInt::carryKernel, 2, sizeof(cl_mem), &needCarry_d);
-	error |= clSetKernelArg(oclBigInt::carryKernel, 3, sizeof(int), &minWidth);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in carry : set carry args : " << error << std::endl;
-		std::cin.get();
-		exit(error);
-	}
+	//error = clSetKernelArg(oclBigInt::carryKernel, 0, sizeof(cl_mem), &limbs);
+	//error |= clSetKernelArg(oclBigInt::carryKernel, 1, sizeof(cl_mem), &carry_d);
+	//error |= clSetKernelArg(oclBigInt::carryKernel, 2, sizeof(cl_mem), &needCarry_d);
+	//error |= clSetKernelArg(oclBigInt::carryKernel, 3, sizeof(int), &minWidth);
+	//if (error != CL_SUCCESS) {
+	//	std::cout << "Error in carry : set carry args : " << error << std::endl;
+	//	std::cin.get();
+	//	exit(error);
+	//}
 
-	error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::carryKernel, 1, 0, &workItems,
-		&oclBigInt::workItemsPerGroup, 0, NULL, &event_profile);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in carry : enqueue carry : " << error << std::endl;
-		std::cin.get();
-		exit(error);
-	}
-	if (oclBigInt::profile == true) {
-		clFlush(oclBigInt::queue);
-		clFinish(oclBigInt::queue);
-		clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &sT, NULL);
-		clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &eT, NULL);
-		oclBigInt::time_carry2 += (eT - sT);
-	}
-	clReleaseEvent(event_profile);
+	//error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::carryKernel, 1, 0, &workItems,
+	//	&oclBigInt::workItemsPerGroup, 0, NULL, &event_profile);
+	//if (error != CL_SUCCESS) {
+	//	std::cout << "Error in carry : enqueue carry : " << error << std::endl;
+	//	std::cin.get();
+	//	exit(error);
+	//}
+	//if (oclBigInt::profile == true) {
+	//	clFlush(oclBigInt::queue);
+	//	clFinish(oclBigInt::queue);
+	//	clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &sT, NULL);
+	//	clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &eT, NULL);
+	//	oclBigInt::time_carry2 += (eT - sT);
+	//}
+	//clReleaseEvent(event_profile);
 
 	error = clSetKernelArg(oclBigInt::carry2Kernel, 0, sizeof(cl_mem), &limbs);
 	error |= clSetKernelArg(oclBigInt::carry2Kernel, 1, sizeof(cl_mem), &carry_d);
@@ -530,7 +482,7 @@ void oclBigInt::carry(cl_mem &carry_d, int minWidth) {
 		exit(error);
 	}
 
-	error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::carryKernel, 1, 0, &workItems,
+	error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::carry2Kernel, 1, 0, &workItems,
 		&oclBigInt::workItemsPerGroup, 0, NULL, &event_profile);
 	if (error != CL_SUCCESS) {
 		std::cout << "Error in carry : enqueue carry2 : " << error << std::endl;
@@ -546,7 +498,7 @@ void oclBigInt::carry(cl_mem &carry_d, int minWidth) {
 	}
 	clReleaseEvent(event_profile);
 
-	clReleaseMemObject(needCarry_d);
+	
 
 	//error = clEnqueueReadBuffer(oclBigInt::queue, needCarry_d, CL_TRUE, 0, sizeof(bool), &needCarry_h,
 	//	0, NULL, NULL);
@@ -628,16 +580,33 @@ oclBigInt::oclBigInt(void) {
 	numLimbs = 0;
 }
 
-oclBigInt::oclBigInt(unsigned int i, unsigned int pos) {
+oclBigInt::oclBigInt(size_t size) {
+	cl_int error;
+	numLimbs = size;
+	limbs = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, numLimbs * sizeof(unsigned int),
+		NULL, &error);
+	if (error != CL_SUCCESS) {
+		std::cout << "Error creating buffer in oclBigInt(size_t): " << error << std::endl;
+		std::cin.get();
+		exit(error);
+	}
+}
+
+oclBigInt::oclBigInt(int i, unsigned int pos) {
 	cl_int error;
 	numLimbs = pos + 1;
 	std::vector<unsigned int> transfer(numLimbs, 0U);
-	transfer[pos] = i;
+	if (i < 0) {
+		transfer[pos] = i * -1;
+	}
 	limbs = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, numLimbs * sizeof(unsigned int), &(transfer[0]), &error);
 	if (error != CL_SUCCESS) {
 		std::cout << "Error creating buffer in oclBigInt(unsigned int): " << error << std::endl;
 		std::cin.get();
 		exit(error);
+	}
+	if (i < 0) {
+		setNeg();
 	}
 }
 
@@ -800,11 +769,7 @@ oclBigInt &oclBigInt::operator>>=(const int d) {
 		clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &eT, NULL);
 		oclBigInt::time_shr += (eT - sT);
 	}
-	clReleaseEvent(event_profile);
-	clReleaseMemObject(limbs);
-	numLimbs = r.numLimbs;
-	limbs = r.limbs;
-	clRetainMemObject(r.limbs);
+	move(r);
 
 	return *this;
 }
@@ -864,14 +829,23 @@ oclBigInt &oclBigInt::operator+=(const oclBigInt &n) {
 	}
 	clReleaseEvent(event_profile);
 
+	//BigInt tthis = this->toBigInt();
+	//BigInt tn = n.toBigInt();
+	//std::vector<unsigned int> ccarry(minWidth);
+	//clEnqueueReadBuffer(oclBigInt::queue, carry_d, CL_TRUE, 0, minWidth * sizeof(cl_uint), &ccarry[0],
+	//	0, NULL, NULL);
 	//clEnqueueReadBuffer(oclBigInt::queue, needCarry_d, CL_TRUE, 0, sizeof(bool), &needCarry_h,
 		//0, NULL, NULL);
 	//if (needCarry_h) {
-		carry(carry_d, minWidth);
+	cl_mem needCarry_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, sizeof(bool), NULL,
+			0);
+		carry(carry_d, needCarry_d, minWidth);
 	//}
 
+		//tthis = this->toBigInt();
+
 	clReleaseMemObject(carry_d);
-	//clReleaseMemObject(needCarry_d);
+	clReleaseMemObject(needCarry_d);
 
 	return *this;
 }
@@ -880,6 +854,8 @@ oclBigInt &oclBigInt::operator-=(const oclBigInt &n) {
 	oclBigInt t;
 	n.copy(t);
 	t.setNeg();
+	//BigInt ct = t.toBigInt();
+	//std::cout << ct << std::endl;
 	return *this += t;
 }
 
@@ -1212,18 +1188,189 @@ void oclBigInt::verify() {
 	//truncate();
 }
 
+oclBigInt &oclBigInt::shiftMul(const oclBigInt &n, int minSize) {
+	using std::cout; using std::endl;
+	//const int minSize = 0x2; // must be > 4
+	cl_int error;
+
+	// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
+	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
+
+	if (this->getNumLimbs() < minSize && n.getNumLimbs() < minSize) {
+		oclBigInt t;
+		n.copy(t);
+		t >>= 64;
+		*this >>= 64;
+		this->baseMul(t);
+		return *this;
+	}
+
+	int p;
+	// temp way to match size
+	if (n.getNumLimbs() > getNumLimbs()) { // num limbs / 2 rounded up
+		p = n.getNumLimbs() / 2 + n.getNumLimbs() % 2;
+	} else {
+		p = getNumLimbs() / 2 + getNumLimbs() % 2;
+	}
+
+	oclBigInt a_1;
+	copy(a_1);
+
+	int a = 5;
+	for (int i = 0; i < 10000000; i++) {
+		a = i / 19;
+	}
+	fillBuffer(a_1.limbs, 0x0, p, getNumLimbs());
+	a_1.resize(p); // m_1 * x^(1 - p)
+
+	oclBigInt a_0;
+	copy(a_0);
+	fillBuffer(a_0.limbs, 0x0, 0, p);
+	a_0 <<= (p * 32);
+	a_0.resize(p); // m_0 * x^(1 - p);
+
+	oclBigInt b_1;
+	n.copy(b_1);
+	fillBuffer(b_1.limbs, 0x0, p, n.getNumLimbs());
+	b_1.resize(p); // n_1 * x^(1 - p)
+
+	oclBigInt b_0;
+	n.copy(b_0);
+	fillBuffer(b_0.limbs, 0x0, 0, p);
+	b_0 <<= (p * 32);
+	b_0.resize(p); // n_0 * x^(1 - p)
+
+	oclBigInt c_2;
+	a_1.copy(c_2);
+	c_2.shiftMul(b_1, minSize); // c_2 = m_1 * n_1 * x^(-2 - 2p)
+
+	oclBigInt c_0;
+	a_0.copy(c_0);
+	c_0.shiftMul(b_0, minSize); // c_0 = m_0 * n_0 * x^(-2 - 2p)
+
+	//BigInt ca_1 = a_1.toBigInt();
+	//BigInt ca_0 = a_0.toBigInt();
+	//BigInt cb_1 = b_1.toBigInt();
+	//BigInt cb_0 = b_0.toBigInt();
+	//BigInt cc_2 = c_2.toBigInt();
+	//BigInt cc_0 = c_0.toBigInt();
+	//BigInt cc_1, ct_a, ct_b, ct_c, co_a, co_b;
+
+	//cout << "a_1 : " << a_1 << endl;
+	//cout << "a_0 : " << a_0 << endl;
+	//cout << "b_1 : " << b_1 << endl;
+	//cout << "b_0 : " << b_0 << endl;
+	//cout << "c_2 : " << c_2 << endl;
+	//cout << "c_0 : " << c_0 << endl;
+
+	oclBigInt c_1; // c_1 = a_1
+	c_1.move(a_1);
+
+	oclBigInt t;  // t = b_1
+	t.move(b_1);
+
+	c_1 >>= 32; // m_1 * x^(-p)
+	a_0 >>= 32; // m_0 * x^(-p)
+	c_1 += a_0;
+	oclBigInt o_a(1U); // overflow of addition
+	clEnqueueCopyBuffer(oclBigInt::queue, c_1.limbs, o_a.limbs, 0, 0, sizeof(unsigned int),
+		0, NULL, NULL);
+
+	t >>= 32;   // n_1 * x^(-p)
+	b_0 >>= 32; // n_0 * x^(-p)
+	t += b_0;
+	oclBigInt o_b(1U); // addition overflow
+	clEnqueueCopyBuffer(oclBigInt::queue, t.limbs, o_b.limbs, 0, 0, sizeof(unsigned int),
+		0, NULL, NULL);
+
+	oclBigInt t_c;
+
+	const unsigned int zero = 0;
+	oclBigInt t_a(c_1.getNumLimbs());
+	oclBigInt t_b(t.getNumLimbs());
+	clEnqueueCopyBuffer(oclBigInt::queue, t.limbs, t_a.limbs, 1 * sizeof(unsigned int),
+		1 * sizeof(unsigned int), (t.getNumLimbs() - 1) * sizeof(unsigned int), 0, NULL, NULL);
+	clEnqueueWriteBuffer(oclBigInt::queue, t_a.limbs, CL_FALSE, 0, sizeof(unsigned int), &zero,
+		0, NULL, NULL);
+	clEnqueueCopyBuffer(oclBigInt::queue, c_1.limbs, t_b.limbs, 1 * sizeof(unsigned int),
+		1 * sizeof(unsigned int), (c_1.getNumLimbs() - 1) * sizeof(unsigned int), 0, NULL, NULL);
+	clEnqueueWriteBuffer(oclBigInt::queue, t_b.limbs, CL_FALSE, 0, sizeof(unsigned int), &zero,
+		0, NULL, NULL);
+	o_a.copy(t_c);
+
+	t_a.baseMul(o_a);
+	t_b.baseMul(o_b);
+	t_c.baseMul(o_b);
+	t_a >>= 64;
+	t_b >>= 64;
+	t_c >>= 64;
+
+	c_1 <<= 32; // c_1 = (m_1 + m_0) * x^(1-p)
+	c_1.resize(p);
+	t <<= 32;  // t = (n_1 + n_0) * x^(1-p)
+	t.resize(p);
+
+	//co_a = o_a.toBigInt();
+	//co_b = o_b.toBigInt();
+	//cc_1 = c_1.toBigInt();
+	//ct_a = t_a.toBigInt();
+	//ct_b = t_b.toBigInt();
+	//ct_c = t_c.toBigInt();
+
+	//cout << "o_a : " << co_a << endl
+	//	<< "o_b : " << co_b << endl
+	//	<< "c_1 : " << cc_1 << endl
+	//	<< "t_a : " << ct_a << endl
+	//	<< "t_b : " << ct_b << endl
+	//	<< "t_c : " << ct_c << endl;
+
+	c_1.shiftMul(t, minSize); // (m_1 + m_0)(n_1 + n_0) * x^(-2 - 2p)
+	//cc_1 = c_1.toBigInt();
+	//cout << "shiftMul : " << cc_1 << endl;
+	c_1 += t_a;
+	//cc_1 = c_1.toBigInt();
+	//cout << "+ t_a : " << cc_1 << endl;
+	c_1 += t_b;
+	//cc_1 = c_1.toBigInt();
+	//cout << "+ t_b : " << cc_1 << endl;
+	c_1 += t_c;
+	//cc_1 = c_1.toBigInt();
+	//cout << "+ t_c : " << cc_1 << endl;
+	c_1 -= c_2;      // ((m_1 + m_0)(n_1 + n_0) - r_2) * x^(-2 - 2p)
+	//cc_1 = c_1.toBigInt();
+	//cout << "- c_2 : " << cc_1 << endl;
+	c_1 -= c_0;      // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(-2 - 2p)
+	//cc_1 = c_1.toBigInt();
+	//cout << "- c_0 : " << cc_1 << endl;
+	//cout << endl;
+	                      // c_2 = m_1 * n_1 * x^(-2-2p)
+	c_0 >>= (2 * p) * 32; // c_0 = m_0 * n_0 * x^(-2 - 4p)
+	c_1 >>= p * 32;       // c_1 = ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(-2 - 3p)
+
+	c_0 += c_2; // c_0 = R
+	c_0 += c_1;
+
+	clReleaseMemObject(limbs);
+	numLimbs = c_0.numLimbs;
+	limbs = c_0.limbs;
+	c_0.numLimbs = 0;
+	c_0.limbs = NULL;
+
+	return *this;
+}
+
 oclBigInt &oclBigInt::mul2(const oclBigInt &n, int minSize) {
 	using std::cout; using std::endl;
 	cl_int error;
 	//const int minSize = 0x4000;
-	
-	if (getNumLimbs() < minSize || n.getNumLimbs() < minSize) {
-		this->baseMul(n);
-		return *this;
-	}
 
 	// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
 	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
+
+	if (getNumLimbs() < minSize && n.getNumLimbs() < minSize) {
+		this->baseMul(n);
+		return *this;
+	}
 
 	int p; // max num limbs / 2 rounded up
 	if (n.getNumLimbs() > getNumLimbs()) {
@@ -1232,73 +1379,21 @@ oclBigInt &oclBigInt::mul2(const oclBigInt &n, int minSize) {
 		p = getNumLimbs() / 2 + getNumLimbs() % 2;
 	}
 
-	oclBigInt c_2, c_1, c_0;
-	{
-		oclBigInt a_1, a_0, b_1, b_0, t;
-		copy(a_1);
-		fillBuffer(a_1.limbs, 0x0, p, getNumLimbs());
-		//a_1 >>= 32;
-		a_1.resize(p); // a_1 = m_1 * x^(1 - p)
-		//a_1.truncate(); 
-
-		copy(a_0);
-		fillBuffer(a_0.limbs, 0x0, 0, p);
-		a_0 <<= (p * 32 - 64);
-		a_0.resize(p+2);
-		a_0.truncate(); // a_0 = m_0 / x^(p + 1)
-
-		n.copy(b_1);
-		fillBuffer(b_1.limbs, 0x0, p, n.getNumLimbs());
-		//b_1 >>= 32;
-		b_1.resize(p); // b_1 = n_1 * x^(1 - p)
-		//b_1.truncate(); 
-
-		n.copy(b_0);
-		fillBuffer(b_0.limbs, 0x0, 0, p);
-		b_0 <<= (p * 32 - 64);
-		b_0.resize(p+2);
-		b_0.truncate(); // b_0 = n_0 / x^(p + 1)
-
-		a_1.copy(c_2);
-		c_2 *= b_1;     // c_2 = m_1 * n_1 * x^(2 - 2p)
-
-		a_0.copy(c_0);
-		c_0 *= b_0;     // c_0 = m_0 * n_0 * x^(-2 - 2p)
-
-		c_1.limbs = a_1.limbs;
-		c_1.numLimbs = a_1.numLimbs;
-		a_1.limbs = NULL;
-		a_1.numLimbs = 0;
-		
-		t.limbs = b_1.limbs;
-		t.numLimbs = b_1.numLimbs;
-		b_1.limbs = NULL;
-		b_1.numLimbs = 0;
-
-		c_1 >>= 64; // c_1 = m_1 * x^(-1 - p)
-		c_1 += a_0;
-		t >>= 64;   // t = n_1 * x^(-1 - p)
-		t += b_0;
-		c_1 *= t; // (m_1 + m_0)(n_1 + n_0) * x^(-2 - 2p)
-	}
-
-	c_2 >>= 128; // c_2 = m_1 * n_1 * x^(-2p)
-	c_1 -= c_2; // ((m_1 + m_0)(n_1 + n_0) - r_2) / x^(2p)
-	c_1 -= c_0; // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) / x^(2p)
-
-	c_2 <<= 128;              // c_2 = m_1 * n_1 * x^(2-2p)
-	c_0 >>= (2 * p - 4) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
-	c_1 >>= (p - 4) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
-
-	c_0 += c_1;
-	c_0 += c_2;
-
-	clReleaseMemObject(limbs);
-	numLimbs = c_0.numLimbs;
-	limbs = c_0.limbs;
-	clRetainMemObject(c_0.limbs);
+	this->shiftMul(n, minSize);
+	*this <<= (4 * 32);
+	this->resize(-1 + 4 * p);
 
 	return *this;
+}
+
+void oclBigInt::move(oclBigInt &n) {
+	if (numLimbs > 0) {
+		clReleaseMemObject(limbs);
+	}
+	limbs = n.limbs;
+	numLimbs = n.numLimbs;
+	n.limbs = NULL;
+	n.numLimbs = 0;
 }
 
 std::ostream& operator<<(std::ostream &os, const oclBigInt &n) {
@@ -1330,4 +1425,4 @@ cl_ulong oclBigInt::time_count;
 cl_ulong oclBigInt::time_add;
 cl_ulong oclBigInt::time_neg;
 cl_ulong oclBigInt::time_carryOne;
-bool oclBigInt::profile = true;
+bool oclBigInt::profile = false;

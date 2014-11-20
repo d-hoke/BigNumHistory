@@ -17,6 +17,7 @@ public:
 	char intToHex(unsigned char input) const { return input + (input > 9 ? 55 : 48); }
 	BigInt oldMul(const BigInt &n) const;
 	BigInt baseMul(const BigInt &n) const;
+	BigInt shiftMul(const BigInt &n, int minSize) const;
 
 public:
 	BigInt(void);
@@ -36,7 +37,7 @@ public:
 	BigInt operator-(const BigInt &n) const;
 	BigInt &operator-=(const BigInt &n);
 	BigInt operator*(const BigInt &n) const;
-	BigInt mulDigit(const BigInt &n) const;
+	BigInt mulDigit(const BigInt &n, int minSize = 0x2) const;
 	//BigInt &operator*=(const BigInt &n);
 	bool operator==(const BigInt &n) const;
 	bool operator>(const unsigned int other) const;

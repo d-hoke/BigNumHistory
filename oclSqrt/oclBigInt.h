@@ -16,13 +16,15 @@ public:
 	static size_t getNumWorkItems(size_t numLimbs);
 
 	cl_mem limbs;
+	cl_mem carryBuffer;
 	size_t numLimbs;
 
 	void rmask(const oclBigInt &mask);
 	void truncate();
 	oclBigInt &oldMul(const oclBigInt &n);
 	oclBigInt &baseMul(const oclBigInt &n);
-	void carry(cl_mem &carry_d, int minWidth);
+	oclBigInt &shiftMul(const oclBigInt &n, int minSize);
+	void carry(cl_mem &carry_d, cl_mem &needCarry_d, int minWidth);
 
 public:
 	static cl_context context;
@@ -54,10 +56,10 @@ public:
 	static void printProfiling(int runs = 1, double bigTotal = 1.0);
 
 	oclBigInt(void);
-	oclBigInt(unsigned int i, unsigned int pos = 0U);
+	oclBigInt(size_t size);
+	oclBigInt(int i, unsigned int pos = 0U);
 	oclBigInt(double d, unsigned int prec = 2U);
 	oclBigInt(BigInt &n);
-	//oclBigInt(const BigInt &i);
 	~oclBigInt(void);
 
 	bool operator>(const int n);
@@ -72,8 +74,9 @@ public:
 	BigInt toBigInt() const;
 	void verify();
 	size_t getNumLimbs() const { return numLimbs; }
-	oclBigInt &mul2(const oclBigInt &n, int minSize);
+	oclBigInt &mul2(const oclBigInt &n, int minSize = 0x2);
 	void resize(const size_t size);
+	void move(oclBigInt &n);
 
 	friend std::ostream& operator<<(std::ostream &os, const oclBigInt &n);
 };
