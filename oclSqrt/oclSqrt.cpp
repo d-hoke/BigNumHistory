@@ -31,8 +31,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	oclBigInt::queue = queue;
 
 	//calcSqrt2();
-	checks();
-	//profile();
+	//checks();
+	profile();
 
 	std::cout << "waiting for input to quit." << std::endl;
 	std::cin.get();
@@ -129,11 +129,11 @@ void checks() {
 	using std::cout; using std::endl;
 	srand(time(0));
 
-	size_t xSize = 0x1000;
+	size_t xSize = 0x1;
 	size_t ySize = xSize;
 	cout << xSize << " limbs\n";
 
-	for (; true; xSize *= 2, ySize = xSize) {
+	for (; true; ) {
 		BigInt x(0U, xSize - 1);
 		for (unsigned int i = 0; i < xSize; i++) {
 			x.set((rand() + (rand() << 16)), i);
@@ -147,22 +147,23 @@ void checks() {
 
 		//cout << "x = " << x << endl;
 
-		//BigInt a = x * y;
-		//BigInt aC = a;
-		//BigInt b = x.mulDigit(y, 0x1f);
-		//BigInt bC = b;
+		BigInt a = x * y;
+		BigInt aC = a;
+		BigInt b = x.mulDigit(y, 0x1f);
+		BigInt bC = b;
 
-		oclBigInt oX = x;
-		oclBigInt oY = y;
+		//oclBigInt oX = x;
+		//oclBigInt oY = y;
 
-		oclBigInt a;
-		oX.copy(a);
-		a *= oY;
-		BigInt aC = a.toBigInt();
-		oclBigInt b;
-		oX.copy(b);
-		b.mul2(oY, 0x4000);
-		BigInt bC = b.toBigInt();
+		//oclBigInt a;
+		//oX.copy(a);
+		//a *= oY;
+		//BigInt aC = a.toBigInt();
+
+		//oclBigInt b;
+		//oX.copy(b);
+		//b.mul2(oY);
+		//BigInt bC = b.toBigInt();
 
 		//cout << x << endl << a << endl << b << endl;
 		cout << xSize << ":" << (aC == bC) << "\t";
@@ -174,7 +175,7 @@ void profile() {
 
 	srand(time(0));
 	int runs = 0x1;
-	size_t xSize = 0x1000;
+	size_t xSize = 0x100;
 	size_t ySize = xSize;
 	size_t minSize = 8383;
 	DWORD sT;
@@ -205,24 +206,24 @@ void profile() {
 
 		cout << "limbs : " << xSize << " minSize : " << minSize << endl;
 
-		//sT = timeGetTime();
-		//for (int curRun = 0; curRun < runs; curRun++) {
-		//	BigInt x(0U, xSize - 1);
-		//	for (unsigned int i = 0; i < xSize; i++) {
-		//		x.set((rand() + (rand() << 16)), i);
-		//	}
+		sT = timeGetTime();
+		for (int curRun = 0; curRun < runs; curRun++) {
+			BigInt x(0U, xSize - 1);
+			for (unsigned int i = 0; i < xSize; i++) {
+				x.set((rand() + (rand() << 16)), i);
+			}
 
-		//	BigInt y(0U, ySize - 1);
-		//	for (unsigned int i = 0; i < ySize; i++) {
-		//		y.set((rand() + (rand() << 16)), i);
-		//	}
+			BigInt y(0U, ySize - 1);
+			for (unsigned int i = 0; i < ySize; i++) {
+				y.set((rand() + (rand() << 16)), i);
+			}
 
-		//	x.toOcl() *= y.toOcl();
-		//}
+			x * y;
+		}
 		//clFlush(oclBigInt::queue);
 		//clFinish(oclBigInt::queue);
-		//dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
-		//cout << "v1 : x * y (" << runs << " runs)\t: " << dT << endl;
+		dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
+		cout << "v1 : x * y (" << runs << " runs)\t: " << dT << endl;
 
 		sT = timeGetTime();
 		for (int curRun = 0; curRun < runs; curRun++) {
@@ -236,14 +237,15 @@ void profile() {
 				y.set((rand() + (rand() << 16)), i);
 			}
 
-			oclBigInt oX = x;
-			oclBigInt yX = y;
-			oX.mul2(yX, 0x4000);
+			//oclBigInt oX = x;
+			//oclBigInt oY = y;
+			//oX *= oY;
+			x.mulDigit(y, 0x1f);
 		}
-		clFlush(oclBigInt::queue);
-		clFinish(oclBigInt::queue);
+		//clFlush(oclBigInt::queue);
+		//clFinish(oclBigInt::queue);
 		dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
-		cout << "4000 : x * y (" << runs << " runs)\t: " << dT << endl;
+		cout << "v2 : x * y (" << runs << " runs)\t: " << dT << endl;
 
 		cout << endl;
 	}

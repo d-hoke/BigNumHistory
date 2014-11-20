@@ -35,6 +35,59 @@ void BigInt::rmask(const BigInt &mask) {
 	}
 }
 
+BigInt BigInt::baseMul(const BigInt &n) const {
+	unsigned int largeSize = (n.numLimbs() > numLimbs() ? n.numLimbs() : numLimbs()) - 1;
+	BigInt r(0U, n.numLimbs() + numLimbs() - 2);
+	BigInt carry(0U, n.numLimbs() + numLimbs() - 2);
+	for (int curDigit = 0; curDigit < r.numLimbs(); curDigit++) {
+		int start = curDigit - largeSize;
+		start = start < 0 ? 0 : start;
+		int end = (curDigit < n.numLimbs() - 1 ? curDigit + 1 : n.numLimbs());
+		//int end = n.numLimbs();
+		int multiplicand = curDigit - start;
+		for (int i = start; i < end && multiplicand < numLimbs(); i++, multiplicand = curDigit - i) {
+			for (int curBit = 0; curBit < 32; curBit++) {
+				if ((n.limbs[i] & (1 << curBit)) != 0) {
+					unsigned int addend = 0;
+					addend |= (limbs[multiplicand] << curBit);
+					// in ocl, break out of loop
+					if (multiplicand + 1 < limbs.size() && curBit != 0) {
+						addend |= (limbs[multiplicand + 1] >> (32 - curBit));
+					}
+					if (addend > 0) {
+						unsigned int p = r.limbs[curDigit];
+						r.limbs[curDigit] += addend;
+						if (r.limbs[curDigit] < p && curDigit > 0) {
+							carry.limbs[curDigit - 1]++;
+						}
+					}
+				}
+			}
+		}
+		if (curDigit < n.numLimbs() - 1) {
+			int multiplicand = -1;
+			for (int curBit = 0; curBit < 32; curBit++) {
+				if ((n.limbs[curDigit + 1] & (1 << curBit)) != 0) {
+					// in ocl, break final out of loop
+					unsigned int addend = 0;
+					if (multiplicand + 1 < limbs.size() && curBit != 0) {
+						addend |= (limbs[multiplicand + 1] >> (32 - curBit));
+					}
+					if (addend > 0) {
+						unsigned int p = r.limbs[curDigit];
+						r.limbs[curDigit] += addend;
+						if (r.limbs[curDigit] < p && curDigit > 0) {
+							carry.limbs[curDigit - 1]++;
+						}
+					}
+				}
+			}
+		}
+	}
+	r += carry;
+	return r;
+}
+
 BigInt::BigInt(void)
 {
 }
@@ -177,67 +230,17 @@ BigInt &BigInt::operator-=(const BigInt &n) {
 }
 
 BigInt BigInt::operator*(const BigInt &n) const {
-	unsigned int largeSize = (n.numLimbs() > numLimbs() ? n.numLimbs() : numLimbs()) - 1;
-	BigInt r(0U, n.numLimbs() + numLimbs() - 2);
-	BigInt carry(0U, n.numLimbs() + numLimbs() - 2);
-	for (int curDigit = 0; curDigit < r.numLimbs(); curDigit++) {
-		int start = curDigit - largeSize;
-		start = start < 0 ? 0 : start;
-		int end = (curDigit < n.numLimbs() - 1 ? curDigit + 1 : n.numLimbs());
-		//int end = n.numLimbs();
-		int multiplicand = curDigit - start;
-		for (int i = start; i < end && multiplicand < numLimbs(); i++, multiplicand = curDigit - i) {
-			for (int curBit = 0; curBit < 32; curBit++) {
-				if ((n.limbs[i] & (1 << curBit)) != 0) {
-					unsigned int addend = 0;
-					addend |= (limbs[multiplicand] << curBit);
-					// in ocl, break out of loop
-					if (multiplicand + 1 < limbs.size() && curBit != 0) {
-						addend |= (limbs[multiplicand + 1] >> (32 - curBit));
-					}
-					if (addend > 0) {
-						unsigned int p = r.limbs[curDigit];
-						r.limbs[curDigit] += addend;
-						if (r.limbs[curDigit] < p && curDigit > 0) {
-							carry.limbs[curDigit - 1]++;
-						}
-					}
-				}
-			}
-		}
-		if (curDigit < n.numLimbs() - 1) {
-			int multiplicand = -1;
-			for (int curBit = 0; curBit < 32; curBit++) {
-				if ((n.limbs[curDigit + 1] & (1 << curBit)) != 0) {
-					// in ocl, break final out of loop
-					unsigned int addend = 0;
-					if (multiplicand + 1 < limbs.size() && curBit != 0) {
-						addend |= (limbs[multiplicand + 1] >> (32 - curBit));
-					}
-					if (addend > 0) {
-						unsigned int p = r.limbs[curDigit];
-						r.limbs[curDigit] += addend;
-						if (r.limbs[curDigit] < p && curDigit > 0) {
-							carry.limbs[curDigit - 1]++;
-						}
-					}
-				}
-			}
-		}
-	}
-	r += carry;
-	return r;
-}
-
-BigInt BigInt::mulDigit(const BigInt &n, int minSize) const {
 	using std::cout; using std::endl;
-	//const int minSize = 0x20; // must be > 4
+	const int minSize = 0x20; // must be > 4
 
 	// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
 	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
 
-	int p;
+	if (numLimbs() < minSize && n.numLimbs() < minSize) {
+		return this->baseMul(n);
+	}
 
+	int p;
 	// temp way to match size
 	if (n.numLimbs() > numLimbs()) { // num limbs / 2 rounded up
 		p = n.numLimbs() / 2 + n.numLimbs() % 2;
@@ -273,56 +276,27 @@ BigInt BigInt::mulDigit(const BigInt &n, int minSize) const {
 	b_0 <<= (p * 32 - 32);
 	b_0.truncate();
 
-	BigInt c_2;
-	if (a_1.numLimbs() > minSize && b_1.numLimbs() > minSize) {
-		c_2 = a_1.mulDigit(b_1, minSize);
-	} else {
-		c_2 = a_1 * b_1;
-	}
+	BigInt c_2 = a_1 * b_1; // c_2 = m_1 * n_1 / x^(2p)
+	BigInt c_0 = a_0 * b_0; // c_0 = m_0 * n_0 / x^(2p)
 
-	BigInt c_0;
-	if (a_0.numLimbs() > minSize || b_0.numLimbs() > minSize) {
-		c_0 = a_0.mulDigit(b_0, minSize);
-		//BigInt t = a_0 * b_0;
-	} else {
-		c_0 = a_0 * b_0;
-	}
-
-	//BigInt c_2 = a_1 * b_1; // c_2 = m_1 * n_1 / x^(2p)
-	//BigInt c_0 = a_0 * b_0; // c_0 = m_0 * n_0 / x^(2p)
-
-	BigInt c_1 = (a_1 + a_0);
-	BigInt t = (b_1 + b_0);
-	if (c_1.numLimbs() > minSize && t.numLimbs() > minSize) {
-		c_1 = c_1.mulDigit(t, minSize);
-	} else {
-		c_1 = c_1 * t;
-	}
-	//BigInt c_1 = (a_1 + a_0) * (b_1 + b_0); // (m_1 + m_0)(n_1 + n_0) / x^(2p)
+	BigInt c_1 = (a_1 + a_0) * (b_1 + b_0); // (m_1 + m_0)(n_1 + n_0) / x^(2p)
 	c_1 -= c_2;                             // ((m_1 + m_0)(n_1 + n_0) - r_2) / x^(2p)
 	c_1 -= c_0;                             // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) / x^(2p)
 
-	//std::cout << "cpu : c_2 : " << c_2 << std::endl;
-	//std::cout << "cpu : c_0 : " << c_0 << std::endl;
-	//std::cout << "cpu : c_1 : " << c_1 << std::endl;
-
 	c_2 <<= 2 * 32;        // c_2 = m_1 * n_1 * x^(2-2p)
-
 	c_0 >>= (2 * p - 2) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
-
 	c_1 >>= (p - 2) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
 
-	//BigInt r = c_2 + c_1 + c_0;
-	//r.truncate();
 	c_0 += c_2; // c_0 = R
 	c_0 += c_1;
 	c_0.truncate();
-	//cout << "cpu : c_2 << 2 * 32 : " << c_2 << endl;
-	//cout << "cpu : c_0 >> (2 * " << p << " - 2) * 32 : " << c_0 << endl;
-	//cout << "cpu : c_1 >> (" << p << " - 2) * 32 : " << c_1 << endl;
-	//cout << "cpu : r : " << r << endl;
-	//std::cout << std::endl;
 	return c_0;
+}
+
+BigInt BigInt::mulDigit(const BigInt &n, int minSize) const {
+	using std::cout; using std::endl;
+	
+	return *this * n;
 }
 
 bool BigInt::operator==(const BigInt &n) const {
