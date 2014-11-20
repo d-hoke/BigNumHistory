@@ -3,7 +3,7 @@
 //#include "BigInt.h"
 // assumes limb size to be 32
 //#define DEBUG_SHIFTMUL
-#define DEBUG_CL
+//#define DEBUG_CL
 //#define DEBUG_VERIFY
 
 class BigInt;
@@ -36,7 +36,7 @@ public:
 	//oclBigInt &oldMul(const oclBigInt &n);
 	oclBigInt &baseMul(const oclBigInt &n);
 	void split(const oclBigInt &n, oclBigInt &n_1, oclBigInt &n_0, int p);
-	oclBigInt &shiftMul(oclBigInt &n, int minSize);
+	oclBigInt &shiftMul(oclBigInt &n, cl_uint minSize);
 	void toggle(cl_mem dCarry);
 
 public:
@@ -94,7 +94,7 @@ public:
 	BigInt toBigInt() const;
 	void verify();
 	size_t getNumLimbs() const { return numLimbs; }
-	oclBigInt &mul2(const oclBigInt &n, int minSize = 0x8000);
+	oclBigInt &mul2(const oclBigInt &n, cl_uint minSize = 0xc000);
 	void resize(const size_t size);
 	void move(oclBigInt &n);
 
