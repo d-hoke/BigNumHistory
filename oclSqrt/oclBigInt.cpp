@@ -143,6 +143,69 @@ void oclBigInt::truncate() {
 	resize(newSize > 0 ? newSize : 1);
 }
 
+oclBigInt &oclBigInt::oldMul(const oclBigInt &n) {
+	cl_int error;
+	
+	size_t sizeR = numLimbs + n.numLimbs - 2 + 1;
+	cl_mem r_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, sizeR * sizeof(unsigned int), NULL, &error);
+	if (error != CL_SUCCESS) {
+		std::cout << "Error in * : create r buffer : " << error << std::endl;
+		std::cin.get();
+		exit(error);
+	}
+
+	size_t workItems = oclBigInt::getNumWorkItems(sizeR);
+	cl_mem carry_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, sizeR * sizeof(unsigned int), NULL, &error);
+	if (error != CL_SUCCESS) {
+		std::cout << "Error in * : create carry buffer : " << error << std::endl;
+		std::cin.get();
+		exit(error);
+	}
+
+	error = clSetKernelArg(oclBigInt::oldMulKernel, 0, sizeof(cl_mem), &limbs);
+	error |= clSetKernelArg(oclBigInt::oldMulKernel, 1, sizeof(cl_mem), &n.limbs);
+	error |= clSetKernelArg(oclBigInt::oldMulKernel, 2, sizeof(cl_mem), &r_d);
+	error |= clSetKernelArg(oclBigInt::oldMulKernel, 3, sizeof(cl_mem), &carry_d);
+	error |= clSetKernelArg(oclBigInt::oldMulKernel, 4, sizeof(int), &numLimbs);
+	error |= clSetKernelArg(oclBigInt::oldMulKernel, 5, sizeof(int), &n.numLimbs);
+	if (error != CL_SUCCESS) {
+		std::cout << "Error in * : set mul args : " << error << std::endl;
+		std::cin.get();
+		exit(error);
+	}
+
+	error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::oldMulKernel, 1, 0, &workItems, &oclBigInt::workItemsPerGroup, 0, NULL, NULL);
+	if (error != CL_SUCCESS) {
+		std::cout << "Error in * : enqueue mul : " << error << std::endl;
+		std::cin.get();
+		exit(error);
+	}
+
+	clReleaseMemObject(limbs);
+	limbs = r_d;
+	numLimbs = sizeR;
+
+	error = clSetKernelArg(oclBigInt::carry2Kernel, 0, sizeof(cl_mem), &limbs);
+	error |= clSetKernelArg(oclBigInt::carry2Kernel, 1, sizeof(cl_mem), &carry_d);
+	error |= clSetKernelArg(oclBigInt::carry2Kernel, 2, sizeof(size_t), &numLimbs);
+	if (error != CL_SUCCESS) {
+		std::cout << "Error in * : set carry args : " << error << std::endl;
+		std::cin.get();
+		exit(error);
+	}
+
+	error = clEnqueueTask(oclBigInt::queue, oclBigInt::carry2Kernel, 0, NULL, NULL);
+	if (error != CL_SUCCESS) {
+		std::cout << "Error in * : enqueue carry : " << error << std::endl;
+		std::cin.get();
+		exit(error);
+	}
+
+	clReleaseMemObject(carry_d);
+
+	return *this;
+}
+
 oclBigInt &oclBigInt::baseMul(const oclBigInt &n) {
 	cl_int error;
 	
@@ -162,6 +225,8 @@ oclBigInt &oclBigInt::baseMul(const oclBigInt &n) {
 		exit(error);
 	}
 
+	fillBuffer(carry_d, 0, 0, sizeR);
+
 	error = clSetKernelArg(oclBigInt::mulKernel, 0, sizeof(cl_mem), &limbs);
 	error |= clSetKernelArg(oclBigInt::mulKernel, 1, sizeof(cl_mem), &n.limbs);
 	error |= clSetKernelArg(oclBigInt::mulKernel, 2, sizeof(cl_mem), &r_d);
@@ -174,7 +239,8 @@ oclBigInt &oclBigInt::baseMul(const oclBigInt &n) {
 		exit(error);
 	}
 
-	error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::mulKernel, 1, 0, &workItems, &oclBigInt::workItemsPerGroup, 0, NULL, NULL);
+	error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::mulKernel, 1, 0, &workItems,
+		&oclBigInt::workItemsPerGroup, 0, NULL, NULL);
 	if (error != CL_SUCCESS) {
 		std::cout << "Error in * : enqueue mul : " << error << std::endl;
 		std::cin.get();
@@ -184,6 +250,14 @@ oclBigInt &oclBigInt::baseMul(const oclBigInt &n) {
 	clReleaseMemObject(limbs);
 	limbs = r_d;
 	numLimbs = sizeR;
+
+	//std::vector<unsigned int> r_h(sizeR);
+	//clEnqueueReadBuffer(oclBigInt::queue, r_d, CL_TRUE, 0, sizeR * sizeof(unsigned int), &r_h[0],
+	//	0, NULL, NULL);
+
+	//std::vector<unsigned int> carry_h(sizeR);
+	//clEnqueueReadBuffer(oclBigInt::queue, carry_d, CL_TRUE, 0, sizeR * sizeof(unsigned int), &carry_h[0],
+	//	0, NULL, NULL);
 
 	error = clSetKernelArg(oclBigInt::carry2Kernel, 0, sizeof(cl_mem), &limbs);
 	error |= clSetKernelArg(oclBigInt::carry2Kernel, 1, sizeof(cl_mem), &carry_d);
@@ -295,11 +369,25 @@ oclBigInt &oclBigInt::operator<<=(const int d) {
 		exit(error);
 	}
 
+	error = clFlush(oclBigInt::queue);
+	if (error != CL_SUCCESS) {
+		std::cout << "Error in <<= : before copy buffer : " << error << endl;
+		std::cin.get();
+		//exit(error);
+	}
+
+	error = clFinish(oclBigInt::queue);
+	if (error != CL_SUCCESS) {
+		std::cout << "Error in <<= : before copy buffer : " << error << endl;
+		std::cin.get();
+		//exit(error);
+	}
+
 	error = clEnqueueCopyBuffer(oclBigInt::queue, limbs, src_d, 0, 0, sizeof(unsigned int) * numLimbs, 0, NULL, NULL);
 	if (error != CL_SUCCESS) {
 		std::cout << "Error in <<= : copy buffer from limbs to src_d : " << error << endl;
 		std::cin.get();
-		exit(error);
+		//exit(error);
 	}
 
 	fillBuffer(limbs, 0, 0, numLimbs);
@@ -444,9 +532,9 @@ oclBigInt &oclBigInt::operator-=(const oclBigInt &n) {
 oclBigInt &oclBigInt::operator*=(const oclBigInt &n) {
 	using std::cout; using std::endl;
 	cl_int error;
-	const int minSize = 0x4000;
+	const int minSize = 0x30000;
 	
-	if (getNumLimbs() < minSize || n.getNumLimbs() < minSize) {
+	if (getNumLimbs() < minSize && n.getNumLimbs() < minSize) {
 		this->baseMul(n);
 		return *this;
 	}
@@ -683,67 +771,157 @@ void oclBigInt::verify() {
 	//truncate();
 }
 
-oclBigInt &oclBigInt::mul2(const oclBigInt &n) {
+oclBigInt &oclBigInt::mul2(const oclBigInt &n, int minSize) {
+	using std::cout; using std::endl;
 	cl_int error;
+	//const int minSize = 0x4000;
 	
-	size_t sizeR = numLimbs + n.numLimbs - 2 + 1;
-	cl_mem r_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, sizeR * sizeof(unsigned int), NULL, &error);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in * : create r buffer : " << error << std::endl;
-		std::cin.get();
-		exit(error);
+	if (getNumLimbs() < minSize || n.getNumLimbs() < minSize) {
+		this->baseMul(n);
+		return *this;
 	}
 
-	size_t workItems = oclBigInt::getNumWorkItems(sizeR);
-	cl_mem carry_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, sizeR * sizeof(unsigned int), NULL, &error);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in * : create carry buffer : " << error << std::endl;
-		std::cin.get();
-		exit(error);
+	// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
+	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
+
+	int p; // max num limbs / 2 rounded up
+	if (n.getNumLimbs() > getNumLimbs()) {
+		p = n.getNumLimbs() / 2 + n.getNumLimbs() % 2;
+	} else {
+		p = getNumLimbs() / 2 + getNumLimbs() % 2;
 	}
 
-	error = clSetKernelArg(oclBigInt::mul2Kernel, 0, sizeof(cl_mem), &limbs);
-	error |= clSetKernelArg(oclBigInt::mul2Kernel, 1, sizeof(cl_mem), &n.limbs);
-	error |= clSetKernelArg(oclBigInt::mul2Kernel, 2, sizeof(cl_mem), &r_d);
-	error |= clSetKernelArg(oclBigInt::mul2Kernel, 3, sizeof(cl_mem), &carry_d);
-	error |= clSetKernelArg(oclBigInt::mul2Kernel, 4, sizeof(int), &numLimbs);
-	error |= clSetKernelArg(oclBigInt::mul2Kernel, 5, sizeof(int), &n.numLimbs);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in * : set mul args : " << error << std::endl;
-		std::cin.get();
-		exit(error);
-	}
+	oclBigInt a_1, a_0, b_1, b_0;
+	copy(a_1);
+	fillBuffer(a_1.limbs, 0x0, p, getNumLimbs());
+	a_1 >>= 32;
+	a_1.truncate(); // a_1 = m_1 / x^p
 
-	error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::mul2Kernel, 1, 0, &workItems, &oclBigInt::workItemsPerGroup, 0, NULL, NULL);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in * : enqueue mul : " << error << std::endl;
-		std::cin.get();
-		exit(error);
-	}
+	copy(a_0);
+	fillBuffer(a_0.limbs, 0x0, 0, p);
+	a_0 <<= (p * 32 - 32);
+	a_0.truncate(); // a_0 = m_0 / x^p
+
+	n.copy(b_1);
+	fillBuffer(b_1.limbs, 0x0, p, getNumLimbs());
+	b_1 >>= 32;
+	b_1.truncate(); // b_1 = n_1 / x^p
+
+	n.copy(b_0);
+	fillBuffer(b_0.limbs, 0x0, 0, p);
+	b_0 <<= (p * 32 - 32);
+	b_0.truncate(); // b_0 = n_0 / x^p
+
+	oclBigInt c_2;
+	a_1.copy(c_2);
+	c_2.mul2(b_1, minSize);     // c_2 = m_1 * n_1 / x^(2p)
+
+	oclBigInt c_0;
+	a_0.copy(c_0);
+	c_0.mul2(b_0, minSize);     // c_0 = m_0 * n_0 / x^(2p)
+
+	// *******
+	// * c_1 *
+	// *******
+
+	oclBigInt c_1;
+	a_1.copy(c_1);
+	c_1 += a_0;
+
+	oclBigInt t;
+	b_1.copy(t);
+	t += b_0;
+
+	c_1.mul2(t, minSize);   // (m_1 + m_0)(n_1 + n_0) / x^(2p)
+	c_1 -= c_2; // ((m_1 + m_0)(n_1 + n_0) - r_2) / x^(2p)
+	c_1 -= c_0; // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) / x^(2p)
+
+	c_2 <<= 2 * 32; // c_2 = m_1 * n_1 * x^(2-2p)
+	c_0 >>= (2 * p - 2) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
+	c_1 >>= (p - 2) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
+
+	c_0 += c_1;
+	c_0 += c_2;
 
 	clReleaseMemObject(limbs);
-	limbs = r_d;
-	numLimbs = sizeR;
-
-	error = clSetKernelArg(oclBigInt::carry2Kernel, 0, sizeof(cl_mem), &limbs);
-	error |= clSetKernelArg(oclBigInt::carry2Kernel, 1, sizeof(cl_mem), &carry_d);
-	error |= clSetKernelArg(oclBigInt::carry2Kernel, 2, sizeof(size_t), &numLimbs);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in * : set carry args : " << error << std::endl;
-		std::cin.get();
-		exit(error);
-	}
-
-	error = clEnqueueTask(oclBigInt::queue, oclBigInt::carry2Kernel, 0, NULL, NULL);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in * : enqueue carry : " << error << std::endl;
-		std::cin.get();
-		exit(error);
-	}
-
-	clReleaseMemObject(carry_d);
+	numLimbs = c_0.numLimbs;
+	limbs = c_0.limbs;
+	clRetainMemObject(c_0.limbs);
 
 	return *this;
+
+
+	//cl_int error;
+	//
+	//size_t sizeR = numLimbs + n.numLimbs - 2 + 1;
+	//cl_mem r_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, sizeR * sizeof(unsigned int), NULL, &error);
+	//if (error != CL_SUCCESS) {
+	//	std::cout << "Error in * : create r buffer : " << error << std::endl;
+	//	std::cin.get();
+	//	exit(error);
+	//}
+
+	//size_t workItems = oclBigInt::getNumWorkItems(sizeR);
+	//cl_mem carry_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, sizeR * sizeof(unsigned int), NULL, &error);
+	//if (error != CL_SUCCESS) {
+	//	std::cout << "Error in * : create carry buffer : " << error << std::endl;
+	//	std::cin.get();
+	//	exit(error);
+	//}
+
+	//fillBuffer(carry_d, 0, 0, sizeR);
+
+	//error = clSetKernelArg(oclBigInt::mul2Kernel, 0, sizeof(cl_mem), &limbs);
+	//error |= clSetKernelArg(oclBigInt::mul2Kernel, 1, sizeof(cl_mem), &n.limbs);
+	//error |= clSetKernelArg(oclBigInt::mul2Kernel, 2, sizeof(cl_mem), &r_d);
+	//error |= clSetKernelArg(oclBigInt::mul2Kernel, 3, sizeof(cl_mem), &carry_d);
+	//error |= clSetKernelArg(oclBigInt::mul2Kernel, 4, sizeof(int), &numLimbs);
+	//error |= clSetKernelArg(oclBigInt::mul2Kernel, 5, sizeof(int), &n.numLimbs);
+	//if (error != CL_SUCCESS) {
+	//	std::cout << "Error in * : set mul args : " << error << std::endl;
+	//	std::cin.get();
+	//	exit(error);
+	//}
+
+	//error = clEnqueueNDRangeKernel(oclBigInt::queue, oclBigInt::mul2Kernel, 1, 0, &workItems,
+	//	&oclBigInt::workItemsPerGroup, 0, NULL, NULL);
+	//if (error != CL_SUCCESS) {
+	//	std::cout << "Error in * : enqueue mul : " << error << std::endl;
+	//	std::cin.get();
+	//	exit(error);
+	//}
+
+	//clReleaseMemObject(limbs);
+	//limbs = r_d;
+	//numLimbs = sizeR;
+
+	//std::vector<unsigned int> r_h(sizeR);
+	//clEnqueueReadBuffer(oclBigInt::queue, r_d, CL_TRUE, 0, sizeR * sizeof(unsigned int), &r_h[0],
+	//	0, NULL, NULL);
+
+	//std::vector<unsigned int> carry_h(sizeR);
+	//clEnqueueReadBuffer(oclBigInt::queue, carry_d, CL_TRUE, 0, sizeR * sizeof(unsigned int), &carry_h[0],
+	//	0, NULL, NULL);
+
+	//error = clSetKernelArg(oclBigInt::carry2Kernel, 0, sizeof(cl_mem), &limbs);
+	//error |= clSetKernelArg(oclBigInt::carry2Kernel, 1, sizeof(cl_mem), &carry_d);
+	//error |= clSetKernelArg(oclBigInt::carry2Kernel, 2, sizeof(size_t), &numLimbs);
+	//if (error != CL_SUCCESS) {
+	//	std::cout << "Error in * : set carry args : " << error << std::endl;
+	//	std::cin.get();
+	//	exit(error);
+	//}
+
+	//error = clEnqueueTask(oclBigInt::queue, oclBigInt::carry2Kernel, 0, NULL, NULL);
+	//if (error != CL_SUCCESS) {
+	//	std::cout << "Error in * : enqueue carry : " << error << std::endl;
+	//	std::cin.get();
+	//	exit(error);
+	//}
+
+	//clReleaseMemObject(carry_d);
+
+	//return *this;
 }
 
 std::ostream& operator<<(std::ostream &os, const oclBigInt &n) {
@@ -764,3 +942,4 @@ cl_kernel oclBigInt::rmaskKernel;
 cl_kernel oclBigInt::countKernel;
 cl_kernel oclBigInt::mul2Kernel;
 cl_kernel oclBigInt::carry2Kernel;
+cl_kernel oclBigInt::oldMulKernel;

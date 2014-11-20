@@ -35,7 +35,7 @@ void BigInt::rmask(const BigInt &mask) {
 	}
 }
 
-BigInt BigInt::baseMul(const BigInt &n) const {
+BigInt BigInt::oldMul(const BigInt &n) const {
 	unsigned int largeSize = (n.numLimbs() > numLimbs() ? n.numLimbs() : numLimbs()) - 1;
 	BigInt r(0U, n.numLimbs() + numLimbs() - 2);
 	BigInt carry(0U, n.numLimbs() + numLimbs() - 2);
@@ -59,6 +59,9 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 						r.limbs[curDigit] += addend;
 						if (r.limbs[curDigit] < p && curDigit > 0) {
 							carry.limbs[curDigit - 1]++;
+							if (carry.limbs[curDigit - 1] == 0) {
+								std::cout << "stop" << std::endl;
+							}
 						}
 					}
 				}
@@ -78,9 +81,51 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 						r.limbs[curDigit] += addend;
 						if (r.limbs[curDigit] < p && curDigit > 0) {
 							carry.limbs[curDigit - 1]++;
+							if (carry.limbs[curDigit - 1] == 0) {
+								std::cout << "stop" << std::endl;
+							}
 						}
 					}
 				}
+			}
+		}
+	}
+	r += carry;
+	return r;
+}
+
+BigInt BigInt::baseMul(const BigInt &n) const {
+	using std::cout; using std::endl;
+
+	unsigned int largeSize = (n.numLimbs() > numLimbs() ? n.numLimbs() : numLimbs()) - 1;
+	BigInt r(0U, n.numLimbs() + numLimbs() - 2);
+	BigInt carry(0U, n.numLimbs() + numLimbs() - 2);
+	for (int curDigit = 0; curDigit < r.numLimbs(); curDigit++) {
+		// ********************
+		// * interesting guts *
+		// ********************
+		int start = curDigit - largeSize;
+		start = start < 0 ? 0 : start;
+		int end = (curDigit < n.numLimbs() - 1 ? curDigit + 1 : n.numLimbs());
+		int multiplicand = curDigit - start;
+		unsigned long long curR = 0;
+		unsigned int farCarry = 0; // if curR overflows
+		for (int i = start; i < end && multiplicand < numLimbs(); i++, multiplicand = curDigit - i) {
+			unsigned long long p = curR;
+			curR += (unsigned long long)n.limbs[i] * limbs[multiplicand];
+			if (curR < p) {
+				farCarry ++;
+				if (farCarry == 0) {
+					std::cout << "stop." << std::endl;
+				}
+			}
+
+		}
+		r.limbs[curDigit] = (curR & 0xFFFFFFFF);
+		if (curDigit > 0) {
+			carry.limbs[curDigit - 1] += (curR >> 32);
+			if (curDigit > 1) {
+				carry.limbs[curDigit - 2] += farCarry;
 			}
 		}
 	}
@@ -293,10 +338,44 @@ BigInt BigInt::operator*(const BigInt &n) const {
 	return c_0;
 }
 
-BigInt BigInt::mulDigit(const BigInt &n, int minSize) const {
+BigInt BigInt::mulDigit(const BigInt &n) const {
 	using std::cout; using std::endl;
-	
-	return *this * n;
+
+	unsigned int largeSize = (n.numLimbs() > numLimbs() ? n.numLimbs() : numLimbs()) - 1;
+	BigInt r(0U, n.numLimbs() + numLimbs() - 2);
+	BigInt carry(0U, n.numLimbs() + numLimbs() - 2);
+	for (int curDigit = 0; curDigit < r.numLimbs(); curDigit++) {
+		// ********************
+		// * interesting guts *
+		// ********************
+		int start = curDigit - largeSize;
+		start = start < 0 ? 0 : start;
+		int end = (curDigit < n.numLimbs() - 1 ? curDigit + 1 : n.numLimbs());
+		int multiplicand = curDigit - start;
+		unsigned long long curR = 0;
+		unsigned int farCarry = 0; // if curR overflows
+		for (int i = start; i < end && multiplicand < numLimbs(); i++, multiplicand = curDigit - i) {
+			unsigned long long p = curR;
+			curR += (unsigned long long)n.limbs[i] * limbs[multiplicand];
+			if (curR < p) {
+				farCarry ++;
+				//if (farCarry == 0) {
+				//	std::cout << "stop." << std::endl;
+				//}
+			}
+
+		}
+		r.limbs[curDigit] += (curR & 0xFFFFFFFF);
+		if (curDigit > 0) {
+			carry.limbs[curDigit - 1] += (curR >> 32);
+			if (curDigit > 1) {
+				//carry.limbs[curDigit - 2] += farCarry;
+			}
+		}
+
+	}
+	r += carry;
+	return r;
 }
 
 bool BigInt::operator==(const BigInt &n) const {

@@ -31,8 +31,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	oclBigInt::queue = queue;
 
 	//calcSqrt2();
-	//checks();
-	profile();
+	checks();
+	//profile();
 
 	std::cout << "waiting for input to quit." << std::endl;
 	std::cin.get();
@@ -133,7 +133,7 @@ void checks() {
 	size_t ySize = xSize;
 	cout << xSize << " limbs\n";
 
-	for (; true; ) {
+	for (; true; xSize *= 2, ySize = xSize) {
 		BigInt x(0U, xSize - 1);
 		for (unsigned int i = 0; i < xSize; i++) {
 			x.set((rand() + (rand() << 16)), i);
@@ -147,23 +147,23 @@ void checks() {
 
 		//cout << "x = " << x << endl;
 
-		BigInt a = x * y;
-		BigInt aC = a;
-		BigInt b = x.mulDigit(y, 0x1f);
-		BigInt bC = b;
+		//BigInt a = x * y;
+		//BigInt aC = a;
+		//BigInt b = x.mulDigit(y);
+		//BigInt bC = b;
 
-		//oclBigInt oX = x;
-		//oclBigInt oY = y;
+		oclBigInt oX = x;
+		oclBigInt oY = y;
 
-		//oclBigInt a;
-		//oX.copy(a);
-		//a *= oY;
-		//BigInt aC = a.toBigInt();
+		oclBigInt a;
+		oX.copy(a);
+		a *= oY;
+		BigInt aC = a.toBigInt();
 
-		//oclBigInt b;
-		//oX.copy(b);
-		//b.mul2(oY);
-		//BigInt bC = b.toBigInt();
+		oclBigInt b;
+		oX.copy(b);
+		b.baseMul(oY);
+		BigInt bC = b.toBigInt();
 
 		//cout << x << endl << a << endl << b << endl;
 		cout << xSize << ":" << (aC == bC) << "\t";
@@ -175,13 +175,15 @@ void profile() {
 
 	srand(time(0));
 	int runs = 0x1;
-	size_t xSize = 0x100;
+	size_t xSize = 0x100000;
 	size_t ySize = xSize;
-	size_t minSize = 8383;
+	size_t startSize = 0x20000;
+	size_t endSize = 0x44000;
+	size_t minSize = startSize;
 	DWORD sT;
 	int numLimbs;
 	double dT;
-	for (; xSize < 0x100000; xSize *= 2, ySize = xSize) {
+	for (; minSize < endSize; minSize += (endSize - startSize) / 16) {
 		//sT = timeGetTime();
 		//for (int curRun = 0; curRun < runs; curRun++) {
 		//	oclBigInt x = 0.7;
@@ -218,34 +220,57 @@ void profile() {
 				y.set((rand() + (rand() << 16)), i);
 			}
 
-			x * y;
+			oclBigInt oX = x;
+			oclBigInt oY = y;
+			//oX.baseMul(oY);
+			oX.mul2(oY, minSize);
 		}
-		//clFlush(oclBigInt::queue);
-		//clFinish(oclBigInt::queue);
+		clFlush(oclBigInt::queue);
+		clFinish(oclBigInt::queue);
 		dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
 		cout << "v1 : x * y (" << runs << " runs)\t: " << dT << endl;
 
-		sT = timeGetTime();
-		for (int curRun = 0; curRun < runs; curRun++) {
-			BigInt x(0U, xSize - 1);
-			for (unsigned int i = 0; i < xSize; i++) {
-				x.set((rand() + (rand() << 16)), i);
-			}
+		//sT = timeGetTime();
+		//for (int curRun = 0; curRun < runs; curRun++) {
+		//	BigInt x(0U, xSize - 1);
+		//	for (unsigned int i = 0; i < xSize; i++) {
+		//		x.set((rand() + (rand() << 16)), i);
+		//	}
 
-			BigInt y(0U, ySize - 1);
-			for (unsigned int i = 0; i < ySize; i++) {
-				y.set((rand() + (rand() << 16)), i);
-			}
+		//	BigInt y(0U, ySize - 1);
+		//	for (unsigned int i = 0; i < ySize; i++) {
+		//		y.set((rand() + (rand() << 16)), i);
+		//	}
 
-			//oclBigInt oX = x;
-			//oclBigInt oY = y;
-			//oX *= oY;
-			x.mulDigit(y, 0x1f);
-		}
+		//	oclBigInt oX = x;
+		//	oclBigInt oY = y;
+		//	oX.mul2(oY, 0x20000);
+		//}
 		//clFlush(oclBigInt::queue);
 		//clFinish(oclBigInt::queue);
-		dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
-		cout << "v2 : x * y (" << runs << " runs)\t: " << dT << endl;
+		//dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
+		//cout << "20000  : x * y (" << runs << " runs)\t: " << dT << endl;
+
+		//sT = timeGetTime();
+		//for (int curRun = 0; curRun < runs; curRun++) {
+		//	BigInt x(0U, xSize - 1);
+		//	for (unsigned int i = 0; i < xSize; i++) {
+		//		x.set((rand() + (rand() << 16)), i);
+		//	}
+
+		//	BigInt y(0U, ySize - 1);
+		//	for (unsigned int i = 0; i < ySize; i++) {
+		//		y.set((rand() + (rand() << 16)), i);
+		//	}
+
+		//	oclBigInt oX = x;
+		//	oclBigInt oY = y;
+		//	oX.mul2(oY, 0x40000);
+		//}
+		//clFlush(oclBigInt::queue);
+		//clFinish(oclBigInt::queue);
+		//dT = (double)(timeGetTime() - sT) / 1000.0 / (double)runs;
+		//cout << "40000 : x * y (" << runs << " runs)\t: " << dT << endl;
 
 		cout << endl;
 	}
@@ -520,6 +545,14 @@ cl_int initKernels(cl_program program) {
 	printf("Program built.\n");
 
 	oclBigInt::carry2Kernel = clCreateKernel(program, "carry2", &error);
+	if (error != CL_SUCCESS) {
+		printf("Error creating kernel: %i", error);
+		std::cin.get();
+		return error;
+	}
+	printf("Program built.\n");
+
+	oclBigInt::oldMulKernel = clCreateKernel(program, "oldMul", &error);
 	if (error != CL_SUCCESS) {
 		printf("Error creating kernel: %i", error);
 		std::cin.get();

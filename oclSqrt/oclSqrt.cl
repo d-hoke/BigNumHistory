@@ -99,22 +99,13 @@ __kernel void carry(__global unsigned int *n, __global unsigned int *carry, int 
 __kernel void carry2(__global unsigned int *n, __global unsigned int *carry, int size) {
 	const int idx = get_global_id(0);
 	if (idx == 0) {
-		int curCarry = 0;
+		ulong curCarry = 0;
 		for (int i = size - 1; i >= 0; i--) {
 			curCarry += carry[i];
 			if (curCarry != 0) {
-				ulong t = n[i];
-				t += curCarry;
-				n[i] = t;
-				curCarry = t >> 32;
-				//unsigned int p = n[i];
-				//n[i] += curCarry;
-
-				//if (n[i] < p) {
-				//	curCarry = 1;
-				//} else {
-				//	curCarry = 0;
-				//}
+				curCarry += n[i];
+				n[i] = curCarry & 0xFFFFFFFF;
+				curCarry >>= 32;
 			}
 		}
 	}
@@ -139,10 +130,11 @@ __kernel void add(__global unsigned int *n1, __global unsigned int *n2, __global
 	}
 }
 
-// void mul(n1, n2, r, carry, size1, size2)
+// void oldMul(n1, n2, r, carry, size1, size2)
 // perform only reads from n1 and n2, but each thread owns r[idx] and carry[idx - 1]
 // expects workgroup size to be 512
-__kernel void mul(__global const unsigned int *n1, __global const unsigned int *n2, __global unsigned int *r, __global unsigned int *carry, int size1, int size2) {
+__kernel void oldMul(__global const unsigned int *n1, __global const unsigned int *n2,
+	__global unsigned int *r, __global unsigned int *carry, int size1, int size2) {
 	const int localId = get_local_id(0);
 	const int curDigit = get_global_id(0);
 	const int sizeR = size1 + size2 - 2 + 1;
@@ -184,49 +176,74 @@ __kernel void mul(__global const unsigned int *n1, __global const unsigned int *
 	}
 }
 
-// void mul2(n1, n2, r, carry, size1, size2)
+// void mul(n1, n2, r, carry, size1, size2)
 // perform only reads from n1 and n2, but each thread owns r[idx]
 // expects workgroup size to be 512
-__kernel void mul2(__global const unsigned int *n1, __global const unsigned int *n2, __global unsigned int *r, __global unsigned int *carry, int size1, int size2) {
+__kernel void mul(__global const unsigned int *n1, __global const unsigned int *n2,
+	__global unsigned int *r, __global unsigned int *carry, int size1, int size2) {
 	const int localId = get_local_id(0);
 	const int curDigit = get_global_id(0);
 	const int sizeR = size1 + size2 - 2 + 1;
+	const int largeSize = (size2 > size1 ? size2 : size1) - 1;
 
 	if(curDigit < sizeR) {
-		ulong curR = 0;
-		unsigned int largeSize = (size1 > size2 ? size1 : size2) - 1;
 		int start = curDigit - largeSize;
 		start = start < 0 ? 0 : start;
 		int end = (curDigit < size2 - 1 ? curDigit + 1 : size2);
-		for (int i = start; i < end; i++) {
-			int multiplicand = curDigit - i;
-			ulong t = (ulong)n2[i] * n1[multiplicand];
-			curR += t;
-			/*for (int curBit = 0; curBit < 32; curBit++) {
-				if ((n2[i] & (1 << curBit)) != 0) {
-					unsigned int addend = 0;
-					addend |= (n1[multiplicand] << curBit);
-					if (multiplicand + 1 < size1 && curBit != 0) {
-						addend |= (n1[multiplicand + 1] >> (32 - curBit));
-					}
-					curR += addend;
-				}
-			}*/
-		}
-		if (curDigit < size2 - 1) {
-			int multiplicand = -1;
-			for (int curBit = 1; curBit < 32; curBit++) {
-				if ((n2[curDigit + 1] & (1 << curBit)) != 0) {
-					unsigned int addend = (n1[multiplicand + 1] >> (32 - curBit));
-					curR += addend;
-				}
+		int multiplicand = curDigit - start;
+		ulong curR = 0;
+		uint farCarry = 0; // if curR overflows
+		for (int i = start; i < end && multiplicand < size1; i++, multiplicand = curDigit - i) {
+			ulong p  = curR;
+			curR += (ulong)n2[i] * n1[multiplicand];
+			if (curR < p) {
+				farCarry++;
 			}
 		}
-		r[curDigit] = curR & 0xFFFFFFFF;
-		if (curDigit > 0) {
-			carry[curDigit - 1] = curR >> 32;
-		} else {
-			carry[sizeR - 1] = 0;
+		r[curDigit] = (uint)(curR & 0xFFFFFFFF);
+		if (curDigit == 0) {
+			//carry[sizeR - 1] = 0;
+		} else if (curDigit > 0) {
+			atomic_add(&carry[curDigit - 1], (curR >> 32));
+			if (curDigit > 1) {
+				atomic_add(&carry[curDigit - 2], farCarry);
+			}
+		}
+	}
+}
+
+// void mul2(n1, n2, r, carry, size1, size2)
+// perform only reads from n1 and n2, but each thread owns r[idx]
+// expects workgroup size to be 512
+__kernel void mul2(__global const unsigned int *n1, __global const unsigned int *n2,
+	__global unsigned int *r, __global unsigned int *carry, int size1, int size2) {
+	const int localId = get_local_id(0);
+	const int curDigit = get_global_id(0);
+	const int sizeR = size1 + size2 - 2 + 1;
+	const int largeSize = (size2 > size1 ? size2 : size1) - 1;
+
+	if(curDigit < sizeR) {
+		int start = curDigit - largeSize;
+		start = start < 0 ? 0 : start;
+		int end = (curDigit < size2 - 1 ? curDigit + 1 : size2);
+		int multiplicand = curDigit - start;
+		ulong curR = 0;
+		uint farCarry = 0; // if curR overflows
+		for (int i = start; i < end && multiplicand < size1; i++, multiplicand = curDigit - i) {
+			ulong p  = curR;
+			curR += (ulong)n2[i] * n1[multiplicand];
+			if (curR < p) {
+				farCarry++;
+			}
+		}
+		r[curDigit] = (uint)(curR & 0xFFFFFFFF);
+		if (curDigit == 0) {
+			//carry[sizeR - 1] = 0;
+		} else if (curDigit > 0) {
+			atomic_add(&carry[curDigit - 1], (curR >> 32));
+			if (curDigit > 1) {
+				atomic_add(&carry[curDigit - 2], farCarry);
+			}
 		}
 	}
 }

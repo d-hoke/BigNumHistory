@@ -19,6 +19,7 @@ public:
 
 	void rmask(const oclBigInt &mask);
 	void truncate();
+	oclBigInt &oldMul(const oclBigInt &n);
 	oclBigInt &baseMul(const oclBigInt &n);
 
 public:
@@ -35,6 +36,7 @@ public:
 	static cl_kernel countKernel;
 	static cl_kernel mul2Kernel;
 	static cl_kernel carry2Kernel;
+	static cl_kernel oldMulKernel;
 
 	oclBigInt(void);
 	oclBigInt(unsigned int i, unsigned int pos = 0U);
@@ -55,7 +57,7 @@ public:
 	BigInt toBigInt() const;
 	void verify();
 	size_t getNumLimbs() const { return numLimbs; }
-	oclBigInt &mul2(const oclBigInt &n);
+	oclBigInt &mul2(const oclBigInt &n, int minSize);
 	void resize(const size_t size);
 
 	friend std::ostream& operator<<(std::ostream &os, const oclBigInt &n);
