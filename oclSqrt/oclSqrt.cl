@@ -83,7 +83,6 @@ void shortCarry(__global unsigned int *n, volatile __global unsigned int *carry_
 		for (int i = idx; i >= 0 && ok == true; i--) {
 			if (curCarry == 0) {
 				ok = false;
-				carry_d[i] = 0;
 				carry_d[idx] = 0; // possibly redundant
 			} else {
 				uint pCarry = curCarry;
@@ -145,6 +144,10 @@ __kernel void carry2(__global unsigned int *n, __global unsigned int *carry, __g
 	__local uint carry_g[512];
 	__local int tSize;
 
+	if (*needCarry == false) {
+		return;
+	}
+
 	if (idx < workgroupSize) {
 		carry_g[idx] = 0;
 	}
@@ -173,7 +176,7 @@ __kernel void carry2(__global unsigned int *n, __global unsigned int *carry, __g
 		//}
 
 		barrier(CLK_LOCAL_MEM_FENCE);
-		if (idx > 0 && idx < workgroupSize) {
+		if (idx > 0 && idx < workgroupSize && idx * width <= size) {
 			carry[idx * width - 1] = carry_g[idx];
 		} else if (idx == 0) {
 			int newSize;
@@ -333,6 +336,13 @@ __kernel void mul2(__global const unsigned int *n1, __global const unsigned int 
 			curR += (ulong)n2[i] * n1[multiplicand];
 			if (curR < p) {
 				farCarry++;
+				//if (farCarry == 0) {
+				//	for (int j = 0; j < sizeR; j++) {
+				//		r[j] = 404;
+				//		carry[j] = 0;
+				//		carry2[j] = 0;
+				//	}
+				//}
 			}
 		}
 		r[curDigit] = (uint)(curR & 0xFFFFFFFF);

@@ -243,7 +243,7 @@ oclBigInt &oclBigInt::baseMul(const oclBigInt &n) {
 	cl_int error;
 	cl_event event_profile;
 	cl_ulong sT, eT;
-	
+
 	oclBigInt r(numLimbs + n.numLimbs - 2 + 1);
 	fillBuffer(r.carry_d, 0, 0, r.getNumLimbs());
 
@@ -291,18 +291,23 @@ oclBigInt &oclBigInt::baseMul(const oclBigInt &n) {
 	//cl_mem needCarry_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, sizeof(bool), NULL,
 	//		0);
 
-	BigInt check = this->toBigInt();
-	std::vector<cl_uint> c_h(getNumLimbs());
-	std::vector<cl_uint> c2_h(getNumLimbs());
-	clEnqueueReadBuffer(oclBigInt::queue, carry_d, CL_FALSE, 0, getNumLimbs() * sizeof(cl_uint), &c_h[0],
-		0, NULL, NULL);
-	clEnqueueReadBuffer(oclBigInt::queue, carry2_d, CL_TRUE, 0, getNumLimbs() * sizeof(cl_uint), &c2_h[0],
-		0, NULL, NULL);
+	//BigInt check = this->toBigInt();
+	//std::vector<cl_uint> c_h(getNumLimbs());
+	//std::vector<cl_uint> c2_h(getNumLimbs());
+	//clEnqueueReadBuffer(oclBigInt::queue, carry_d, CL_FALSE, 0, getNumLimbs() * sizeof(cl_uint), &c_h[0],
+	//	0, NULL, NULL);
+	//clEnqueueReadBuffer(oclBigInt::queue, carry2_d, CL_TRUE, 0, getNumLimbs() * sizeof(cl_uint), &c2_h[0],
+	//	0, NULL, NULL);
 
 	//fillBuffer(limbs, 0, 0, getNumLimbs() * sizeof(cl_uint));
-	addCarry(carry_d, carry2_d, getNumLimbs());
-	carry(carry_d, getNumLimbs());
-	//carry(carry2_d, getNumLimbs());
+
+
+	addCarry(carry_d, carry2_d, getNumLimbs(), oclBigInt::time_baseMul);
+	//clReleaseMemObject(limbs);
+	//limbs = carry_d;
+	//carry_d = carry2_d;
+	carry(carry_d, carry2_d, getNumLimbs());
+	//carry(carry2_d, carry_d getNumLimbs());
 
 	//BigInt check = this->toBigInt();
 
@@ -314,19 +319,12 @@ oclBigInt &oclBigInt::baseMul(const oclBigInt &n) {
 
 }
 
-void oclBigInt::carry(cl_mem &carry_d, int minWidth) {
+void oclBigInt::carry(cl_mem &carry_d, cl_mem &n2_d, int minWidth) {
 	cl_event event_profile;
 	cl_ulong sT, eT;
 	cl_int error;
 
 	size_t workItems = getNumWorkItems(minWidth);
-
-	cl_mem n2_d = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE, minWidth * sizeof(unsigned int), NULL, &error);
-	if (error != CL_SUCCESS) {
-		std::cout << "Error in carry : create n2 : " << error << std::endl;
-		std::cin.get();
-		exit(error);
-	}
 
 	int iterations;
 	for (iterations = 0; iterations < 2; iterations++) {
@@ -363,12 +361,12 @@ void oclBigInt::carry(cl_mem &carry_d, int minWidth) {
 		clReleaseEvent(event_profile);
 	}
 
-	clReleaseMemObject(n2_d);
+	//clReleaseMemObject(n2_d);
 
-	addCarry(limbs, carry_d, minWidth);
+	addCarry(limbs, carry_d, minWidth, oclBigInt::time_baseMul);
 }
 
-void oclBigInt::addCarry(cl_mem &buffer, cl_mem &carry_d, int minWidth) {
+void oclBigInt::addCarry(cl_mem &buffer, cl_mem &carry_d, int minWidth, cl_ulong &timer) {
 	cl_int error;
 	cl_event event_profile;
 	cl_ulong sT, eT;
@@ -381,7 +379,7 @@ void oclBigInt::addCarry(cl_mem &buffer, cl_mem &carry_d, int minWidth) {
 	//clEnqueueReadBuffer(oclBigInt::queue, carry_d, CL_TRUE, 0, getNumLimbs() * sizeof(cl_uint), &c2_h[0],
 	//	0, NULL, NULL);
 
-	for (int i = 0; i < 1; i++) {
+	//for (int i = 0; i < 1; i++) {
 		bool needCarry_h = false;
 		error = clEnqueueWriteBuffer(oclBigInt::queue, oclBigInt::needCarry_d, CL_FALSE, 0, sizeof(bool),
 			&needCarry_h, 0, NULL, NULL);
@@ -413,15 +411,28 @@ void oclBigInt::addCarry(cl_mem &buffer, cl_mem &carry_d, int minWidth) {
 			clFinish(oclBigInt::queue);
 			clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &sT, NULL);
 			clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &eT, NULL);
-			oclBigInt::time_carry2 += (eT - sT);
+			oclBigInt::time_carry += (eT - sT);
 		}
 		clReleaseEvent(event_profile);
-	}
+	//}
 
 	//clEnqueueReadBuffer(oclBigInt::queue, buffer, CL_FALSE, 0, getNumLimbs() * sizeof(cl_uint), &c_h[0],
 	//	0, NULL, NULL);
 	//clEnqueueReadBuffer(oclBigInt::queue, carry_d, CL_TRUE, 0, getNumLimbs() * sizeof(cl_uint), &c2_h[0],
 	//	0, NULL, NULL);
+	//bool needCarry_h;
+	//clEnqueueReadBuffer(oclBigInt::queue, oclBigInt::needCarry_d, CL_TRUE, 0, sizeof(bool), &needCarry_h,
+	//	0, NULL, NULL);
+
+	//if (needCarry_h == true) {
+	//	//std::cout << "inspect." << std::endl;
+	//	for (int i = 0; i < getNumLimbs(); i++) {
+	//		std::vector<cl_uint> t(3);
+	//		if (c2_h[i] != 0) {
+	//			std::cout << "inspect." << std::endl;
+	//		}
+	//	}
+	//}
 
 	error = clSetKernelArg(oclBigInt::carry2Kernel, 0, sizeof(cl_mem), &buffer);
 	error |= clSetKernelArg(oclBigInt::carry2Kernel, 1, sizeof(cl_mem), &carry_d);
@@ -446,6 +457,7 @@ void oclBigInt::addCarry(cl_mem &buffer, cl_mem &carry_d, int minWidth) {
 		clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &sT, NULL);
 		clGetEventProfilingInfo(event_profile, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &eT, NULL);
 		oclBigInt::time_carry2 += (eT - sT);
+		//timer += (eT - sT);
 	}
 	clReleaseEvent(event_profile);
 }
@@ -567,9 +579,11 @@ oclBigInt::oclBigInt(int i, unsigned int pos) {
 
 	cl_int error;
 	int size = pos + 1;
-	std::vector<unsigned int> transfer(numLimbs, 0U);
+	std::vector<unsigned int> transfer(size, 0U);
 	if (i < 0) {
 		transfer[pos] = i * -1;
+	} else {
+		transfer[pos] = i;
 	}
 	cl_mem newLimbs = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
 		size * sizeof(unsigned int), &(transfer[0]), &error);
@@ -819,7 +833,7 @@ oclBigInt &oclBigInt::operator+=(const oclBigInt &n) {
 	}
 	clReleaseEvent(event_profile);
 
-	addCarry(limbs, carry_d, minWidth);
+	addCarry(limbs, carry_d, minWidth, oclBigInt::time_add);
 
 	return *this;
 }
@@ -887,16 +901,7 @@ oclBigInt &oclBigInt::operator*=(const oclBigInt &n) {
 		c_0 *= b_0;     // c_0 = m_0 * n_0 / x^(2p + 2)
 
 		c_1.move(a_1);
-		//c_1.limbs = a_1.limbs;
-		//c_1.numLimbs = a_1.numLimbs;
-		//a_1.limbs = NULL;
-		//a_1.numLimbs = 0;
-		
 		t.move(b_1);
-		//t.limbs = b_1.limbs;
-		//t.numLimbs = b_1.numLimbs;
-		//b_1.limbs = NULL;
-		//b_1.numLimbs = 0;
 
 		c_1 += a_0;
 		t += b_0;
@@ -916,88 +921,6 @@ oclBigInt &oclBigInt::operator*=(const oclBigInt &n) {
 	move(c_0);
 
 	return *this;
-
-	//using std::cout; using std::endl;
-	//cl_int error;
-	//const int minSize = 0x10000;
-	//
-	//if (getNumLimbs() < minSize || n.getNumLimbs() < minSize) {
-	//	this->baseMul(n);
-	//	return *this;
-	//}
-
-	//// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
-	//// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
-
-	//int p; // max num limbs / 2 rounded up
-	//if (n.getNumLimbs() > getNumLimbs()) {
-	//	p = n.getNumLimbs() / 2 + n.getNumLimbs() % 2;
-	//} else {
-	//	p = getNumLimbs() / 2 + getNumLimbs() % 2;
-	//}
-
-	//oclBigInt a_1, a_0, b_1, b_0;
-	//copy(a_1);
-	//fillBuffer(a_1.limbs, 0x0, p, getNumLimbs());
-	//a_1 >>= 32;
-	////a_1.resize(p + 1);
-	//a_1.truncate(); // a_1 = m_1 / x^p
-
-	//copy(a_0);
-	//fillBuffer(a_0.limbs, 0x0, 0, p);
-	//a_0 <<= (p * 32 - 32);
-	////a_0.resize(p+1);
-	//a_0.truncate(); // a_0 = m_0 / x^p
-
-	//n.copy(b_1);
-	//fillBuffer(b_1.limbs, 0x0, p, n.getNumLimbs());
-	//b_1 >>= 32;
-	////b_1.resize(p+1);
-	//b_1.truncate(); // b_1 = n_1 / x^p
-
-	//n.copy(b_0);
-	//fillBuffer(b_0.limbs, 0x0, 0, p);
-	//b_0 <<= (p * 32 - 32);
-	////b_0.resize(p+1);
-	//b_0.truncate(); // b_0 = n_0 / x^p
-
-	//oclBigInt c_2;
-	//a_1.copy(c_2);
-	//c_2 *= b_1;     // c_2 = m_1 * n_1 / x^(2p)
-
-	//oclBigInt c_0;
-	//a_0.copy(c_0);
-	//c_0 *= b_0;     // c_0 = m_0 * n_0 / x^(2p)
-
-	//// *******
-	//// * c_1 *
-	//// *******
-
-	//oclBigInt c_1;
-	//a_1.copy(c_1);
-	//c_1 += a_0;
-
-	//oclBigInt t;
-	//b_1.copy(t);
-	//t += b_0;
-
-	//c_1 *= t;   // (m_1 + m_0)(n_1 + n_0) / x^(2p)
-	//c_1 -= c_2; // ((m_1 + m_0)(n_1 + n_0) - r_2) / x^(2p)
-	//c_1 -= c_0; // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) / x^(2p)
-
-	//c_2 <<= 2 * 32; // c_2 = m_1 * n_1 * x^(2-2p)
-	//c_0 >>= (2 * p - 2) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
-	//c_1 >>= (p - 2) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
-
-	//c_0 += c_1;
-	//c_0 += c_2;
-
-	//clReleaseMemObject(limbs);
-	//numLimbs = c_0.numLimbs;
-	//limbs = c_0.limbs;
-	//clRetainMemObject(c_0.limbs);
-
-	//return *this;
 }
 
 void oclBigInt::setNeg() {
@@ -1189,9 +1112,29 @@ oclBigInt &oclBigInt::shiftMul(const oclBigInt &n, int minSize) {
 	if (this->getNumLimbs() < minSize && n.getNumLimbs() < minSize) {
 		oclBigInt t;
 		n.copy(t);
+		//BigInt ct = t.toBigInt();
+		//ct >>= 64;
 		t >>= 64;
+		//if (!(ct == t.toBigInt())) {
+			//cout << "stop." << endl;
+		//}
+
+		//BigInt cc_1 = this->toBigInt();
+		//cc_1 >>= 64;
 		*this >>= 64;
+		//if (!(cc_1 == this->toBigInt())) {
+			//cout << "stop." << endl;
+		//}
+
+		//cc_1 = this->toBigInt();
+		//ct = t.toBigInt();
+		//BigInt fin = cc_1.baseMul(ct);
 		this->baseMul(t);
+		//if (!(fin == this->toBigInt())) {
+			//cc_1.out("c_1.txt");
+			//ct.out("ct.txt");
+			//cout << "stop." << endl;
+		//}
 		return *this;
 	}
 
@@ -1203,51 +1146,65 @@ oclBigInt &oclBigInt::shiftMul(const oclBigInt &n, int minSize) {
 		p = getNumLimbs() / 2 + getNumLimbs() % 2;
 	}
 
-	oclBigInt a_1;
-	copy(a_1);
+	oclBigInt a_1((size_t)p), a_0((size_t)p), b_1((size_t)p), b_0((size_t)p);
 
-	fillBuffer(a_1.limbs, 0x0, p, getNumLimbs());
-	a_1.resize(p); // m_1 * x^(1 - p)
+	// m_1 * x^(1 - p)
+	clEnqueueCopyBuffer(oclBigInt::queue, this->limbs, a_1.limbs, 0, 0,
+		p * sizeof(cl_uint), 0, NULL, NULL); 
 
-	oclBigInt a_0;
-	copy(a_0);
-	fillBuffer(a_0.limbs, 0x0, 0, p);
-	a_0 <<= (p * 32);
-	a_0.resize(p); // m_0 * x^(1 - p);
+	// m_0 * x^(1 - p);
+	int sizeA_0 = getNumLimbs() - p;
+	clEnqueueCopyBuffer(oclBigInt::queue, this->limbs, a_0.limbs, p * sizeof(cl_uint), 0,
+		sizeA_0 * sizeof(cl_uint), 0, NULL, NULL);
+	fillBuffer(a_0.limbs, 0, sizeA_0, p);    
 
-	oclBigInt b_1;
-	n.copy(b_1);
-	fillBuffer(b_1.limbs, 0x0, p, n.getNumLimbs());
-	b_1.resize(p); // n_1 * x^(1 - p)
+	// n_1 * x^(1 - p)
+	clEnqueueCopyBuffer(oclBigInt::queue, n.limbs, b_1.limbs, 0, 0,
+		p * sizeof(cl_uint), 0, NULL, NULL); 
 
-	oclBigInt b_0;
-	n.copy(b_0);
-	fillBuffer(b_0.limbs, 0x0, 0, p);
-	b_0 <<= (p * 32);
-	b_0.resize(p); // n_0 * x^(1 - p)
+	// n_0 * x^(1 - p);
+	int sizeB_0 = getNumLimbs() - p;
+	clEnqueueCopyBuffer(oclBigInt::queue, n.limbs, b_0.limbs, p * sizeof(cl_uint), 0,
+		sizeB_0 * sizeof(cl_uint), 0, NULL, NULL);
+	fillBuffer(b_0.limbs, 0, sizeB_0, p);
 
+	// setup c_1 and t
+	//oclBigInt c_1((size_t)p), t((size_t)p);
+
+#ifdef DEBUG_SHIFTMUL
+	oclBigInt gc_2, gb_1;
+	a_1.copy(gc_2);
+	b_1.copy(gb_1);
+	gc_2.shiftMul(gb_1, 0x1000000);
+#endif
 	oclBigInt c_2;
 	a_1.copy(c_2);
 	c_2.shiftMul(b_1, minSize); // c_2 = m_1 * n_1 * x^(-2 - 2p)
-
+#ifdef DEBUG_SHIFTMUL
+	if (!(gc_2.toBigInt() == c_2.toBigInt())) {
+	//if (!(cc_1 == c_1.toBigInt())) {
+		cout << "stop." << endl;
+	}
+	oclBigInt gc_0, gb_0;
+	a_0.copy(gc_0);
+	b_0.copy(gb_0);
+#endif
 	oclBigInt c_0;
 	a_0.copy(c_0);
+#ifdef DEBUG_SHIFTMUL
+	if (!(gc_0.toBigInt() == c_0.toBigInt()) || !(b_0.toBigInt() == gb_0.toBigInt())) {
+		cout << "stop." << endl;
+	}
+	gc_0.shiftMul(gb_0, minSize);
+#endif
 	c_0.shiftMul(b_0, minSize); // c_0 = m_0 * n_0 * x^(-2 - 2p)
-
-	//BigInt ca_1 = a_1.toBigInt();
-	//BigInt ca_0 = a_0.toBigInt();
-	//BigInt cb_1 = b_1.toBigInt();
-	//BigInt cb_0 = b_0.toBigInt();
-	//BigInt cc_2 = c_2.toBigInt();
-	//BigInt cc_0 = c_0.toBigInt();
-	//BigInt cc_1, ct_a, ct_b, ct_c, co_a, co_b;
-
-	//cout << "a_1 : " << a_1 << endl;
-	//cout << "a_0 : " << a_0 << endl;
-	//cout << "b_1 : " << b_1 << endl;
-	//cout << "b_0 : " << b_0 << endl;
-	//cout << "c_2 : " << c_2 << endl;
-	//cout << "c_0 : " << c_0 << endl;
+#ifdef DEBUG_SHIFTMUL
+	if (!(gc_0.toBigInt() == c_0.toBigInt())) {
+	//if (!(cc_1 == c_1.toBigInt())) {
+		cout << "stop." << endl;
+	}
+	BigInt ca_1, ca_0, cb_1, cb_0, cc_2, cc_0, cc_1, ct_a, ct_b, ct_c, co_a, co_b, ct;
+#endif
 
 	oclBigInt c_1; // c_1 = a_1
 	c_1.move(a_1);
@@ -1284,16 +1241,36 @@ oclBigInt &oclBigInt::shiftMul(const oclBigInt &n, int minSize) {
 		0, NULL, NULL);
 	o_a.copy(t_c);
 
+	//ct_a = t_a.toBigInt();
+	//co_a = o_a.toBigInt();
+	//ct_a = ct_a.baseMul(co_a);
 	t_a.baseMul(o_a);
+	//if (!(ct_a == t_a.toBigInt())) {
+	//	cout << "stop." << endl;
+	//}
+
+	//ct_b = t_b.toBigInt();
+	//co_b = o_b.toBigInt();
+	//ct_b = ct_b.baseMul(co_b);
 	t_b.baseMul(o_b);
+	//if (!(ct_b == t_b.toBigInt())) {
+	//	cout << "stop." << endl;
+	//}
+
+	//ct_c = t_c.toBigInt();
+	//ct_c = ct_c.baseMul(co_b);
 	t_c.baseMul(o_b);
+	//if (!(ct_c == t_c.toBigInt())) {
+	//	cout << "stop." << endl;
+	//}
+
 	t_a >>= 64;
 	t_b >>= 64;
 	t_c >>= 64;
 
 	c_1 <<= 32; // c_1 = (m_1 + m_0) * x^(1-p)
 	c_1.resize(p);
-	t <<= 32;  // t = (n_1 + n_0) * x^(1-p)
+	t <<= 32;   // t = (n_1 + n_0) * x^(1-p)
 	t.resize(p);
 
 	//co_a = o_a.toBigInt();
@@ -1310,25 +1287,87 @@ oclBigInt &oclBigInt::shiftMul(const oclBigInt &n, int minSize) {
 	//	<< "t_b : " << ct_b << endl
 	//	<< "t_c : " << ct_c << endl;
 
+	//cc_1 = c_1.toBigInt();
+	//ct = t.toBigInt();
+	//cc_1 = cc_1.shiftMul(ct, minSize);
+	//oclBigInt gc_1, gt;
+	//c_1.copy(gc_1);
+	//t.copy(gt);
+	//gc_1.shiftMul(gt, 0x1000000);
 	c_1.shiftMul(t, minSize); // (m_1 + m_0)(n_1 + n_0) * x^(-2 - 2p)
+	//if (!(gc_1.toBigInt() == c_1.toBigInt())) {
+	////if (!(cc_1 == c_1.toBigInt())) {
+	//	cout << "stop." << endl;
+	//}
 	//cc_1 = c_1.toBigInt();
 	//cout << "shiftMul : " << cc_1 << endl;
+
+#ifdef DEBUG_SHIFTMUL
+	cc_1 = c_1.toBigInt();
+	ct_a = t_a.toBigInt();
+	cc_1 += ct_a;
+#endif
 	c_1 += t_a;
+#ifdef DEBUG_SHIFTMUL
+	if (!(cc_1 == c_1.toBigInt())) {
+		cout << "stop." << endl;
+	}
 	//cc_1 = c_1.toBigInt();
 	//cout << "+ t_a : " << cc_1 << endl;
+#endif
+
+#ifdef DEBUG_SHIFTMUL
+	cc_1 = c_1.toBigInt();
+	ct_b = t_b.toBigInt();
+	cc_1 += ct_b;
+#endif
 	c_1 += t_b;
+#ifdef DEBUG_SHIFTMUL
+	if (!(cc_1 == c_1.toBigInt())) {
+		cout << "stop." << endl;
+	}
 	//cc_1 = c_1.toBigInt();
 	//cout << "+ t_b : " << cc_1 << endl;
+#endif
+
+#ifdef DEBUG_SHIFTMUL
+	cc_1 = c_1.toBigInt();
+	ct_c = t_c.toBigInt();
+	cc_1 += ct_c;
+#endif
 	c_1 += t_c;
+#ifdef DEBUG_SHIFTMUL
+	if (!(cc_1 == c_1.toBigInt())) {
+		cout << "stop." << endl;
+	}
+#endif
 	//cc_1 = c_1.toBigInt();
 	//cout << "+ t_c : " << cc_1 << endl;
+
+#ifdef DEBUG_SHIFTMUL
+	cc_1 = c_1.toBigInt();
+	cc_2 = c_2.toBigInt();
+	cc_1 -= cc_2;
+#endif
 	c_1 -= c_2;      // ((m_1 + m_0)(n_1 + n_0) - r_2) * x^(-2 - 2p)
+	//if (!(cc_1 == c_1.toBigInt())) {
+	//	cout << "stop." << endl;
+	//}
 	//cc_1 = c_1.toBigInt();
 	//cout << "- c_2 : " << cc_1 << endl;
+
+#ifdef DEBUG_SHIFTMUL
+	cc_1 = c_1.toBigInt();
+	cc_0 = c_0.toBigInt();
+	cc_1 -= cc_0;
+#endif
 	c_1 -= c_0;      // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(-2 - 2p)
-	//cc_1 = c_1.toBigInt();
-	//cout << "- c_0 : " << cc_1 << endl;
-	//cout << endl;
+#ifdef DEBUG_SHIFTMUL
+	if (!(cc_1 == c_1.toBigInt())) {
+		cout << "stop." << endl;
+	}
+	cc_1 = c_1.toBigInt();
+#endif
 	                      // c_2 = m_1 * n_1 * x^(-2-2p)
 	c_0 >>= (2 * p) * 32; // c_0 = m_0 * n_0 * x^(-2 - 4p)
 	c_1 >>= p * 32;       // c_1 = ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(-2 - 3p)

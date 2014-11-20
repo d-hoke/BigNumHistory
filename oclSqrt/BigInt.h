@@ -8,9 +8,9 @@ class BigInt
 {
 	friend class oclBigInt;
 
-	std::vector<limb> limbs;
-
 public:
+
+	std::vector<limb> limbs;
 
 	void carry(const int index);
 	void addCarry(BigInt carry);
@@ -38,7 +38,7 @@ public:
 	BigInt operator-(const BigInt &n) const;
 	BigInt &operator-=(const BigInt &n);
 	BigInt operator*(const BigInt &n) const;
-	BigInt mulDigit(const BigInt &n, int minSize = 0x2) const;
+	BigInt mulDigit(const BigInt &n, int minSize = 0x20) const;
 	//BigInt &operator*=(const BigInt &n);
 	bool operator==(const BigInt &n) const;
 	bool operator>(const unsigned int other) const;
@@ -51,6 +51,8 @@ public:
 	size_t numLimbs() const { return limbs.size(); }
 	//oclBigInt toOcl();
 	void truncate();
+	void out(const char *fileName);
+	void in(const char *fileName);
 
 	friend std::ostream& operator<<(std::ostream &os, const BigInt &n);
 };

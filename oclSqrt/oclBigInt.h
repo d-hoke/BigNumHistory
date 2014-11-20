@@ -2,6 +2,7 @@
 #include "stdafx.h"
 //#include "BigInt.h"
 // assumes limb size to be 32
+//#define DEBUG_SHIFTMUL
 
 class BigInt;
 
@@ -25,8 +26,8 @@ public:
 	//oclBigInt &oldMul(const oclBigInt &n);
 	oclBigInt &baseMul(const oclBigInt &n);
 	oclBigInt &shiftMul(const oclBigInt &n, int minSize);
-	void carry(cl_mem &carry_d, int minWidth);
-	void addCarry(cl_mem &buffer, cl_mem &carry_d, int minWidth);
+	void carry(cl_mem &carry_d, cl_mem &n2_d, int minWidth);
+	void addCarry(cl_mem &buffer, cl_mem &carry_d, int minWidth, cl_ulong &timer);
 
 public:
 	static cl_context context;
@@ -80,7 +81,7 @@ public:
 	BigInt toBigInt() const;
 	void verify();
 	size_t getNumLimbs() const { return numLimbs; }
-	oclBigInt &mul2(const oclBigInt &n, int minSize = 0x30000);
+	oclBigInt &mul2(const oclBigInt &n, int minSize = 0xc000);
 	void resize(const size_t size);
 	void move(oclBigInt &n);
 

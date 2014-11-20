@@ -190,6 +190,8 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 			}
 		}
 	}
+	//carry += carry2;
+	//r = carry;
 	r += carry;
 	r += carry2;
 	return r;
@@ -455,12 +457,14 @@ BigInt BigInt::shiftMul(const BigInt &n, int minSize) const {
 	BigInt c_2 = a_1.shiftMul(b_1, minSize); // c_2 = m_1 * n_1 * x^(-2 - 2p)
 	BigInt c_0 = a_0.shiftMul(b_0, minSize); // c_0 = m_0 * n_0 * x^(-2 - 2p)
 
-	//cout << "a_1 : " << a_1 << endl;
-	//cout << "a_0 : " << a_0 << endl;
-	//cout << "b_1 : " << b_1 << endl;
-	//cout << "b_0 : " << b_0 << endl;
-	//cout << "c_2 : " << c_2 << endl;
-	//cout << "c_0 : " << c_0 << endl;
+	//std::ofstream file("cpu.txt");
+
+	//file << "a_1 : " << a_1 << endl;
+	//file << "a_0 : " << a_0 << endl;
+	//file << "b_1 : " << b_1 << endl;
+	//file << "b_0 : " << b_0 << endl;
+	//file << "c_2 : " << c_2 << endl;
+	//file << "c_0 : " << c_0 << endl;
 
 	a_1 >>= 32;                             // m_1 * x^(-p)
 	a_0 >>= 32;                             // m_0 * x^(-p)
@@ -511,6 +515,7 @@ BigInt BigInt::shiftMul(const BigInt &n, int minSize) const {
 	c_1 -= c_0;                             // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(-2 - 2p)
 	//cout << "- c_0 : " << c_1 << endl;
 	//cout << endl;
+	//file.close();
 
 	//c_2 <<= 4 * 32;     // c_2 = m_1 * n_1 * x^(-2-2p)
 	c_0 >>= (2 * p) * 32; // c_0 = m_0 * n_0 * x^(-2 - 4p)
@@ -552,7 +557,8 @@ bool BigInt::operator==(const BigInt &n) const {
 	}
 	for (int i = 0; i < numLimbs(); i++) {
 		if (limbs[i] != n.limbs[i]) {
-			std::cout << "stupid." << std::endl;
+			std::vector<cl_uint> t(3);
+			std::cout << "conflict->";
 			return false;
 		}
 	}
@@ -616,6 +622,36 @@ std::string BigInt::get() const {
 	}
 
 	return s;
+}
+
+void BigInt::out(const char *fileName) {
+	std::ofstream file(fileName, std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
+	if (file.is_open() == true) {
+		file << limbs.size() << " ";
+		for (int i = 0; i < limbs.size(); i++) {
+			file << limbs[i] << " ";
+		}
+		file.close();
+	} else {
+		std::cout << "file could not be opened." << std::endl;
+		std::cin.get();
+	}
+}
+
+void BigInt::in(const char *fileName) {
+	std::ifstream file(fileName, std::ios_base::in | std::ios_base::binary);
+	if (file.is_open() == true) {
+		int newSize;
+		file >> newSize;
+		limbs.resize(newSize);
+		for (int i = 0; i < limbs.size(); i++) {
+			file >> limbs[i];
+		}
+		file.close();
+	} else {
+		std::cout << "file could not be opened." << std::endl;
+		std::cin.get();
+	}
 }
 
 std::ostream& operator<<(std::ostream &os, const BigInt &n) {
