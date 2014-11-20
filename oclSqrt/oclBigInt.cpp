@@ -123,8 +123,23 @@ void oclBigInt::truncate() {
 		exit(error);
 	}
 	
+	error = clFlush(oclBigInt::queue);
+	if (error != CL_SUCCESS) {
+		std::cout << "stop " << std::endl;
+	}
+	error = clFinish(oclBigInt::queue);
+	if (error != CL_SUCCESS) {
+		std::cout << "stop " << std::endl;
+	}
+
 	int newSize = 0;
 	error = clEnqueueReadBuffer(oclBigInt::queue, newSize_d, CL_TRUE, 0, sizeof(unsigned int), &newSize, 0, NULL, NULL);
+	if (error != CL_SUCCESS) {
+		std::cout << "Error in truncate : read count : " << error << std::endl;
+		std::cin.get();
+		exit(error);
+	}
+
 	resize(newSize > 0 ? newSize : 1);
 }
 
@@ -163,11 +178,11 @@ oclBigInt::oclBigInt(double d, unsigned int prec) {
 	}
 }
 
-oclBigInt::oclBigInt(std::vector<unsigned int> &i) {
-	numLimbs = i.size();
+oclBigInt::oclBigInt(BigInt &n) {
+	numLimbs = n.numLimbs();
 
 	cl_int error;
-	limbs = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, numLimbs * sizeof(unsigned int), &(i[0]), &error);
+	limbs = clCreateBuffer(oclBigInt::context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, numLimbs * sizeof(unsigned int), &(n.limbs[0]), &error);
 	if (error != CL_SUCCESS) {
 		std::cout << "Error creating buffer in oclBigInt(BigInt): " << error << std::endl;
 		std::cin.get();
@@ -588,9 +603,14 @@ void oclBigInt::verify() {
 	//truncate();
 }
 
-oclBigInt &oclBigInt::mul2(const oclBigInt &n) {
+oclBigInt &oclBigInt::mul2(const oclBigInt &n, int minSize) {
 	using std::cout; using std::endl;
-	const int minSize = 0x1f;
+	cl_int error;
+	
+	if (getNumLimbs() < minSize || n.getNumLimbs() < minSize) {
+		*this *= n;
+		return *this;
+	}
 
 	// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
 	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
@@ -601,34 +621,6 @@ oclBigInt &oclBigInt::mul2(const oclBigInt &n) {
 	} else {
 		p = getNumLimbs() / 2 + getNumLimbs() % 2;
 	}
-
-	//BigInt ca_1, ca_0, cb_1, cb_0, cc_2, cc_1, cc_0;
-	//ca_1 = this->toBigInt();
-	//for (int i = p; i < getNumLimbs(); i++) ca_1.set(0, i);
-	//ca_1 >>= 32;
-	//ca_1.truncate();
-
-	//ca_0 = this->toBigInt();
-	//for (int i = 0; i < p; i++) ca_0.set(0, i);
-	//ca_0 <<= (p * 32 - 32);
-	//ca_0.truncate();
-
-	//cb_1 = n.toBigInt();
-	//for (int i = p; i < n.getNumLimbs(); i++) cb_1.set(0, i);
-	//cb_1 >>= 32;
-	//cb_1.truncate();
-
-	//cb_0 = n.toBigInt();
-	//for (int i = 0; i < p; i++) cb_0.set(0, i);
-	//cb_0 <<= (p * 32 - 32);
-	//cb_0.truncate();
-
-	//cc_2 = ca_1 * cb_1;
-	//cc_0 = ca_0 * cb_0;
-
-	//cc_1 = (ca_1 + ca_0) * (cb_1 + cb_0);
-	//cc_1 -= cc_2;
-	//cc_1 -= cc_0;
 
 	oclBigInt a_1, a_0, b_1, b_0;
 	copy(a_1);
@@ -653,11 +645,11 @@ oclBigInt &oclBigInt::mul2(const oclBigInt &n) {
 
 	oclBigInt c_2;
 	a_1.copy(c_2);
-	c_2 *= b_1;     // c_2 = m_1 * n_1 / x^(2p)
+	c_2.mul2(b_1, minSize);     // c_2 = m_1 * n_1 / x^(2p)
 
 	oclBigInt c_0;
 	a_0.copy(c_0);
-	c_0 *= b_0;     // c_0 = m_0 * n_0 / x^(2p)
+	c_0.mul2(b_0, minSize);     // c_0 = m_0 * n_0 / x^(2p)
 
 	// *******
 	// * c_1 *
@@ -671,44 +663,16 @@ oclBigInt &oclBigInt::mul2(const oclBigInt &n) {
 	b_1.copy(t);
 	t += b_0;
 
-	c_1 *= t;   // (m_1 + m_0)(n_1 + n_0) / x^(2p)
+	c_1.mul2(t, minSize);   // (m_1 + m_0)(n_1 + n_0) / x^(2p)
 	c_1 -= c_2; // ((m_1 + m_0)(n_1 + n_0) - r_2) / x^(2p)
 	c_1 -= c_0; // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) / x^(2p)
-
-	//if (ca_0 == a_0.toBigInt()) { }
-	//if (ca_1 == a_1.toBigInt()) { }
-	//if (cb_0 == b_0.toBigInt()) { }
-	//if (cb_1 == b_1.toBigInt()) { }
-	//if (cc_0 == c_0.toBigInt()) { }
-	//if (cc_1 == c_1.toBigInt()) { }
-	//if (cc_2 == c_2.toBigInt()) { }
-	//cc_2 <<= 2 * 32;
-	//cc_0 >>= (2 * p - 2) * 32;
-	//cc_1 >>= (p - 2) * 32;
-
-	//std::cout << "gpu : c_2 : " << c_2 << std::endl;
-	//std::cout << "gpu : c_0 : " << c_0 << std::endl;
-	//std::cout << "gpu : c_1 : " << c_1 << std::endl;
 
 	c_2 <<= 2 * 32; // c_2 = m_1 * n_1 * x^(2-2p)
 	c_0 >>= (2 * p - 2) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
 	c_1 >>= (p - 2) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
-	//cout << "gpu : c_2 << 2 * 32 : " << c_2 << endl;
-	//cout << "gpu : c_0 >> (2 * " << p << " - 2) * 32 : " << c_0 << endl;
-	//cout << "gpu : c_1 >> (" << p << " - 2) * 32 : " << c_1 << endl;
-
-	//if (cc_2 == c_2.toBigInt()) ;
-	//if (cc_1 == c_1.toBigInt()) ;
-	//if (cc_0 == c_0.toBigInt()) ;
-	//cc_0 += cc_1;
-	//cc_0 += cc_2;
-	
-	//cout << "gpu : r : " << c_0 << endl;
 
 	c_0 += c_1;
 	c_0 += c_2;
-
-	//if (cc_0 == c_0.toBigInt()) ;
 
 	clReleaseMemObject(limbs);
 	numLimbs = c_0.numLimbs;

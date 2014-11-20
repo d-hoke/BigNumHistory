@@ -6,7 +6,7 @@
 typedef unsigned int limb;
 class BigInt
 {
-	//friend class oclBigInt;
+	friend class oclBigInt;
 
 	std::vector<limb> limbs;
 
@@ -43,7 +43,7 @@ public:
 	void verify();
 	std::string get() const;
 	size_t numLimbs() const { return limbs.size(); }
-	oclBigInt toOcl();
+	//oclBigInt toOcl();
 	void truncate();
 
 	friend std::ostream& operator<<(std::ostream &os, const BigInt &n);

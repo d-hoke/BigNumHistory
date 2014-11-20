@@ -273,32 +273,32 @@ BigInt BigInt::mulDigit(const BigInt &n, int minSize) const {
 	b_0 <<= (p * 32 - 32);
 	b_0.truncate();
 
-	//BigInt c_2;
-	//if (a_1.numLimbs() > minSize && b_1.numLimbs() > minSize) {
-	//	c_2 = a_1.mulDigit(b_1, minSize);
-	//} else {
-	//	c_2 = a_1 * b_1;
-	//}
+	BigInt c_2;
+	if (a_1.numLimbs() > minSize && b_1.numLimbs() > minSize) {
+		c_2 = a_1.mulDigit(b_1, minSize);
+	} else {
+		c_2 = a_1 * b_1;
+	}
 
-	//BigInt c_0;
-	//if (a_0.numLimbs() > minSize || b_0.numLimbs() > minSize) {
-	//	c_0 = a_0.mulDigit(b_0, minSize);
-	//	//BigInt t = a_0 * b_0;
-	//} else {
-	//	c_0 = a_0 * b_0;
-	//}
+	BigInt c_0;
+	if (a_0.numLimbs() > minSize || b_0.numLimbs() > minSize) {
+		c_0 = a_0.mulDigit(b_0, minSize);
+		//BigInt t = a_0 * b_0;
+	} else {
+		c_0 = a_0 * b_0;
+	}
 
-	BigInt c_2 = a_1 * b_1; // c_2 = m_1 * n_1 / x^(2p)
-	BigInt c_0 = a_0 * b_0; // c_0 = m_0 * n_0 / x^(2p)
+	//BigInt c_2 = a_1 * b_1; // c_2 = m_1 * n_1 / x^(2p)
+	//BigInt c_0 = a_0 * b_0; // c_0 = m_0 * n_0 / x^(2p)
 
-	//BigInt c_1 = (a_1 + a_0);
-	//BigInt t = (b_1 + b_0);
-	//if (c_1.numLimbs() > minSize || t.numLimbs() > minSize) {
-	//	c_1 = c_1.mulDigit(t, minSize);
-	//} else {
-	//	c_1 = c_1 * t;
-	//}
-	BigInt c_1 = (a_1 + a_0) * (b_1 + b_0); // (m_1 + m_0)(n_1 + n_0) / x^(2p)
+	BigInt c_1 = (a_1 + a_0);
+	BigInt t = (b_1 + b_0);
+	if (c_1.numLimbs() > minSize && t.numLimbs() > minSize) {
+		c_1 = c_1.mulDigit(t, minSize);
+	} else {
+		c_1 = c_1 * t;
+	}
+	//BigInt c_1 = (a_1 + a_0) * (b_1 + b_0); // (m_1 + m_0)(n_1 + n_0) / x^(2p)
 	c_1 -= c_2;                             // ((m_1 + m_0)(n_1 + n_0) - r_2) / x^(2p)
 	c_1 -= c_0;                             // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) / x^(2p)
 
@@ -312,8 +312,10 @@ BigInt BigInt::mulDigit(const BigInt &n, int minSize) const {
 
 	c_1 >>= (p - 2) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
 
-	c_0 += c_2;
-	c_0 += c_1; // c_0 = R
+	//BigInt r = c_2 + c_1 + c_0;
+	//r.truncate();
+	c_0 += c_2; // c_0 = R
+	c_0 += c_1;
 	c_0.truncate();
 	//cout << "cpu : c_2 << 2 * 32 : " << c_2 << endl;
 	//cout << "cpu : c_0 >> (2 * " << p << " - 2) * 32 : " << c_0 << endl;
@@ -392,10 +394,6 @@ std::string BigInt::get() const {
 	}
 
 	return s;
-}
-
-oclBigInt BigInt::toOcl() {
-	return oclBigInt(limbs);
 }
 
 std::ostream& operator<<(std::ostream &os, const BigInt &n) {

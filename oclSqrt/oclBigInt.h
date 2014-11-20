@@ -38,7 +38,7 @@ public:
 	oclBigInt(void);
 	oclBigInt(unsigned int i, unsigned int pos = 0U);
 	oclBigInt(double d, unsigned int prec = 2U);
-	oclBigInt(std::vector<unsigned int> &i);
+	oclBigInt(BigInt &n);
 	//oclBigInt(const BigInt &i);
 	~oclBigInt(void);
 
@@ -54,7 +54,7 @@ public:
 	BigInt toBigInt() const;
 	void verify();
 	size_t getNumLimbs() const { return numLimbs; }
-	oclBigInt &mul2(const oclBigInt &n);
+	oclBigInt &mul2(const oclBigInt &n, int minSize);
 	void resize(const size_t size);
 
 	friend std::ostream& operator<<(std::ostream &os, const oclBigInt &n);
