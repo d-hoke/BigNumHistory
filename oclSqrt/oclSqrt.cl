@@ -23,11 +23,16 @@ void condenseCarry(__global unsigned int *n, int sizeN, int *groupCarry, int sta
 
 // void fill(n, pattern, size)
 __kernel void fill(__global unsigned int *n, int pattern, int offset, int size) {
-	for (int i = offset + get_global_id(0); i < size; i += get_global_size(0)) {
-		//if (idx < size) {
-			n[i] = pattern;
-		//}
+	const int i = get_global_id(0) + offset;
+	if (i < size) {
+		n[i] = pattern;
 	}
+
+	//for (int i = offset + get_global_id(0); i < size; i += get_global_size(0)) {
+	//	//if (idx < size) {
+	//		n[i] = pattern;
+	//	//}
+	//}
 }
 
 // void shl(src, dst, size, d)
@@ -68,41 +73,25 @@ __kernel void shr(__global const unsigned int *src, __global unsigned int *dst, 
 	}
 }
 
-// void carry(n, carry, size)
-// carry holds the carry values of every 512 limbs
-// expects num workgroups to be 1, and normal workgroup size to be 512
-__kernel void carry(__global unsigned int *n, __global unsigned int *carry, int size) {
-	const int idx = get_global_id(0);
-	if (idx == 0) {
-		for (int i = (size - (size % 512)) / 512 - 1; i > 0; i--) {
-			int curCarry = carry[i];
-			for (int curLimb = i * 512 - 1; curLimb > 0 && curCarry > 0; curLimb--) {
-				unsigned int p = n[curLimb];
-				n[curLimb] += curCarry;
-				if (n[curLimb] < p) {
-					curCarry = 1;
-				} else {
-					curCarry = 0;
-				}
-				if (curLimb % 512 == 0) {
-					curCarry += carry[curLimb / 512];
-					i--;
-				}
-			}
-		}
-	}
-}
-
-// void carry2(n, carry, size)
+// void carry(n, carry, needCarry, size)
 // carry holds the carry values of every limb
-// expects num workgroups to be 1, and normal workgroup size to be 512
-__kernel void carry2(__global unsigned int *n, __global unsigned int *carry, int size) {
+// expects one workitem for every limb
+__kernel void carry(__global unsigned int *n, __global unsigned int *carry,
+	__global bool *needCarry, int size) {
 	const int idx = get_global_id(0);
-	if (idx == 0) {
-		ulong curCarry = 0;
-		for (int i = size - 1; i >= 0; i--) {
-			curCarry += carry[i];
-			if (curCarry != 0) {
+	if (idx < size) {
+		ulong curCarry = carry[idx];
+		bool ok = true;
+		for (int i = idx; i >= 0 && ok == true; i--) {
+			if (curCarry == 0) {
+				ok = false;
+				carry[idx] = 0;
+			} else if (i > 0 && carry[i - 1] != 0) {
+				ok = false;
+				carry[i] = curCarry;
+				if (i != idx) carry[idx] = 0;
+				*needCarry = true;
+			} else {
 				curCarry += n[i];
 				n[i] = curCarry & 0xFFFFFFFF;
 				curCarry >>= 32;
@@ -111,19 +100,40 @@ __kernel void carry2(__global unsigned int *n, __global unsigned int *carry, int
 	}
 }
 
+// void carry2(n, carry, size)
+// carry holds the carry values of every limb
+// expects num workgroups to be 1
+__kernel void carry2(__global unsigned int *n, __global unsigned int *carry, __global bool *needCarry,
+	int size) {
+	const int idx = get_global_id(0);
+	if (idx == 0 && *needCarry == true) {
+		ulong curCarry = 0;
+		for (int i = size - 1; i >= 0; i--) {
+			curCarry += carry[i];
+			curCarry += n[i];
+			n[i] = curCarry & 0xFFFFFFFF;
+			curCarry >>= 32;
+		}
+	}
+}
+
 // void add(n1, n2, carry, size)
 // expects workgroup size to be 512
-__kernel void add(__global unsigned int *n1, __global unsigned int *n2, __global unsigned int *carry, int size) {
+__kernel void add(__global unsigned int *n1, __global unsigned int *n2, __global unsigned int *carry,
+	int size) {
 	const int idx = get_global_id(0);
 	const int localId = get_local_id(0);
 
 	if (idx < size) {
 		ulong t = n1[idx];
 		t += n2[idx];
-		n1[idx] = t & 0xFFFFFFFF;
+		n1[idx] = t & 0xFFFFFFFFU;
 		t >>= 32;
 		if (idx > 0) {
 			carry[idx - 1] = t;
+			//if (t > 0) {
+				//*needCarry = true;
+			//}
 		} else {
 			carry[size - 1] = 0;
 		}
@@ -197,13 +207,18 @@ __kernel void mul(__global const unsigned int *n1, __global const unsigned int *
 			ulong p  = curR;
 			curR += (ulong)n2[i] * n1[multiplicand];
 			if (curR < p) {
+				int pf = farCarry;
 				farCarry++;
+				if (farCarry < pf) {
+					for (int j = 0; j < sizeR; j++) {
+						r[j] = 404;
+						carry[j] = 0;
+					}
+				}
 			}
 		}
 		r[curDigit] = (uint)(curR & 0xFFFFFFFF);
-		if (curDigit == 0) {
-			//carry[sizeR - 1] = 0;
-		} else if (curDigit > 0) {
+		if (curDigit > 0) {
 			atomic_add(&carry[curDigit - 1], (curR >> 32));
 			if (curDigit > 1) {
 				atomic_add(&carry[curDigit - 2], farCarry);
@@ -212,11 +227,12 @@ __kernel void mul(__global const unsigned int *n1, __global const unsigned int *
 	}
 }
 
-// void mul2(n1, n2, r, carry, size1, size2)
+// void mul2(n1, n2, r, carry, carry2, size1, size2)
 // perform only reads from n1 and n2, but each thread owns r[idx]
 // expects workgroup size to be 512
 __kernel void mul2(__global const unsigned int *n1, __global const unsigned int *n2,
-	__global unsigned int *r, __global unsigned int *carry, int size1, int size2) {
+	__global unsigned int *r, __global unsigned int *carry, __global uint *carry2,
+	int size1, int size2) {
 	const int localId = get_local_id(0);
 	const int curDigit = get_global_id(0);
 	const int sizeR = size1 + size2 - 2 + 1;
@@ -240,9 +256,14 @@ __kernel void mul2(__global const unsigned int *n1, __global const unsigned int 
 		if (curDigit == 0) {
 			//carry[sizeR - 1] = 0;
 		} else if (curDigit > 0) {
-			atomic_add(&carry[curDigit - 1], (curR >> 32));
-			if (curDigit > 1) {
-				atomic_add(&carry[curDigit - 2], farCarry);
+			curR >>= 32;
+			if (curR > 0) {
+				carry[curDigit - 1] = curR;
+				//*needCarry = true;
+			}
+			if (curDigit > 1 && farCarry > 0) {
+				carry2[curDigit - 2] = farCarry;
+				//*needCarry = true;
 			}
 		}
 	}
@@ -250,37 +271,26 @@ __kernel void mul2(__global const unsigned int *n1, __global const unsigned int 
 
 // void neg(n, carry, size)
 // expects workgroup size to be 512
-__kernel void neg(__global unsigned int *n, __global unsigned int *carry, int size) {
-	__local int tmpCarry[512];
+__kernel void neg(__global unsigned int *n, int size) {
 	const int idx = get_global_id(0);
 	if (idx < size) {
 		n[idx] = ~(n[idx]);
 	}
-	if (get_local_id(0) == 0) {
-		carry[get_group_id(0)] = 0;
-	}
+}
 
-	// condense carry
-	barrier(CLK_LOCAL_MEM_FENCE);
-	if (idx == (get_num_groups(0) - 1) * 512) {
-		for (int i = 0; i < (size - 1) - idx; i++) {
-			tmpCarry[i] = 0;
+// void carryOne(n, size)
+// expects workgroup = 1
+// used in setNeg, adds one to the very end and carries if necessary
+__kernel void carryOne(__global unsigned int *n, int size) {
+	const int idx = get_global_id(0);
+	if (idx == 0) {
+		bool ok = true;
+		for (int i = size - 1; i >= 0 && ok == true; i--) {
+			n[i]++;
+			if (n[i] != 0) {
+				ok = false;
+			}
 		}
-		tmpCarry[size - 1 - idx] = 1;
-		for (int i = 0; i < get_num_groups(0) - 1; i++) {
-			carry[i] = 0;
-		}
-		int groupCarry = 0;
-		condenseCarry(n, size, &groupCarry, idx, tmpCarry);
-		carry[get_num_groups(0) - 1] = groupCarry;
-
-		//carry[get_group_id(0)] = 1;
-		//for (int i = size - 1; i >= idx; i--) {
-		//	if (++n[i] != 0) { // not overflowing
-		//		i = -1;
-		//		carry[get_group_id(0)] = 0;
-		//	}
-		//}
 	}
 }
 

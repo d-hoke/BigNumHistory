@@ -8,6 +8,7 @@ class BigInt;
 class oclBigInt
 {
 	static const size_t workItemsPerGroup = 512;
+	static bool profile;
 
 public:
 	// size in 32-bits
@@ -21,6 +22,7 @@ public:
 	void truncate();
 	oclBigInt &oldMul(const oclBigInt &n);
 	oclBigInt &baseMul(const oclBigInt &n);
+	void carry(cl_mem &carry_d, int minWidth);
 
 public:
 	static cl_context context;
@@ -37,6 +39,19 @@ public:
 	static cl_kernel mul2Kernel;
 	static cl_kernel carry2Kernel;
 	static cl_kernel oldMulKernel;
+	static cl_kernel carryOneKernel;
+	static cl_ulong time_baseMul;
+	static cl_ulong time_carry2;
+	static cl_ulong time_fill;
+	static cl_ulong time_shr;
+	static cl_ulong time_shl;
+	static cl_ulong time_count;
+	static cl_ulong time_add;
+	static cl_ulong time_neg;
+	static cl_ulong time_carryOne;
+
+	static void resetProfiling();
+	static void printProfiling(int runs = 1, double bigTotal = 1.0);
 
 	oclBigInt(void);
 	oclBigInt(unsigned int i, unsigned int pos = 0U);

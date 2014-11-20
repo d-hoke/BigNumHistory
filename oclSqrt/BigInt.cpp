@@ -100,6 +100,7 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 	unsigned int largeSize = (n.numLimbs() > numLimbs() ? n.numLimbs() : numLimbs()) - 1;
 	BigInt r(0U, n.numLimbs() + numLimbs() - 2);
 	BigInt carry(0U, n.numLimbs() + numLimbs() - 2);
+	BigInt carry2(0U, n.numLimbs() + numLimbs() - 2);
 	for (int curDigit = 0; curDigit < r.numLimbs(); curDigit++) {
 		// ********************
 		// * interesting guts *
@@ -112,7 +113,8 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 		unsigned int farCarry = 0; // if curR overflows
 		for (int i = start; i < end && multiplicand < numLimbs(); i++, multiplicand = curDigit - i) {
 			unsigned long long p = curR;
-			curR += (unsigned long long)n.limbs[i] * limbs[multiplicand];
+			unsigned long long t = (unsigned long long)n.limbs[i] * limbs[multiplicand];
+			curR += t;
 			if (curR < p) {
 				farCarry ++;
 				if (farCarry == 0) {
@@ -125,10 +127,11 @@ BigInt BigInt::baseMul(const BigInt &n) const {
 		if (curDigit > 0) {
 			carry.limbs[curDigit - 1] += (curR >> 32);
 			if (curDigit > 1) {
-				carry.limbs[curDigit - 2] += farCarry;
+				carry2.limbs[curDigit - 2] += farCarry;
 			}
 		}
 	}
+	carry += carry2;
 	r += carry;
 	return r;
 }
@@ -276,7 +279,7 @@ BigInt &BigInt::operator-=(const BigInt &n) {
 
 BigInt BigInt::operator*(const BigInt &n) const {
 	using std::cout; using std::endl;
-	const int minSize = 0x20; // must be > 4
+	const int minSize = 0x8; // must be > 4
 
 	// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
 	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
@@ -297,40 +300,42 @@ BigInt BigInt::operator*(const BigInt &n) const {
 	for (int i = p; i < numLimbs(); i++) {
 		a_1.set(0, i);
 	}
-	a_1 >>= 32;
-	a_1.truncate();
+	a_1 >>= (32 + 32);
+	a_1.truncate(); // m_1 / x^(p + 1)
 
 	BigInt a_0 = *this;
 	for (int i = 0; i < p; i++) {
 		a_0.set(0, i);
 	}
-	a_0 <<= (p * 32 - 32);
-	a_0.truncate();
+	a_0 <<= (p * 32 - 32 - 32);
+	a_0.truncate(); // m_0 / x^(p + 1)
 
 	BigInt b_1 = n;
 	for (int i = p; i < n.numLimbs(); i++) {
 		b_1.set(0, i);
 	}
-	b_1 >>= 32;
-	b_1.truncate();
+	b_1 >>= (32 + 32);
+	b_1.truncate(); // n_1 / x^(p + 1)
 
 	BigInt b_0 = n;
 	for (int i = 0; i < p; i++) {
 		b_0.set(0, i);
 	}
-	b_0 <<= (p * 32 - 32);
-	b_0.truncate();
+	b_0 <<= (p * 32 - 32 - 32);
+	b_0.truncate(); // n_0 / x^(p + 1)
 
-	BigInt c_2 = a_1 * b_1; // c_2 = m_1 * n_1 / x^(2p)
-	BigInt c_0 = a_0 * b_0; // c_0 = m_0 * n_0 / x^(2p)
+	BigInt c_2 = a_1 * b_1; // c_2 = m_1 * n_1 / x^(2p + 2)
+	BigInt c_0 = a_0 * b_0; // c_0 = m_0 * n_0 / x^(2p + 2)
 
-	BigInt c_1 = (a_1 + a_0) * (b_1 + b_0); // (m_1 + m_0)(n_1 + n_0) / x^(2p)
-	c_1 -= c_2;                             // ((m_1 + m_0)(n_1 + n_0) - r_2) / x^(2p)
-	c_1 -= c_0;                             // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) / x^(2p)
+	BigInt c_1 = (a_1 + a_0);
+	BigInt t = (b_1 + b_0); 
+	c_1 = c_1 * t;                          // (m_1 + m_0)(n_1 + n_0) * x^(-2p - 2)
+	c_1 -= c_2;                             // ((m_1 + m_0)(n_1 + n_0) - r_2) * x^(-2p - 2)
+	c_1 -= c_0;                             // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(-2p - 2)
 
-	c_2 <<= 2 * 32;        // c_2 = m_1 * n_1 * x^(2-2p)
-	c_0 >>= (2 * p - 2) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
-	c_1 >>= (p - 2) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
+	c_2 <<= 4 * 32;        // c_2 = m_1 * n_1 * x^(2-2p)
+	c_0 >>= (2 * p - 4) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
+	c_1 >>= (p - 4) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
 
 	c_0 += c_2; // c_0 = R
 	c_0 += c_1;
@@ -340,42 +345,121 @@ BigInt BigInt::operator*(const BigInt &n) const {
 
 BigInt BigInt::mulDigit(const BigInt &n) const {
 	using std::cout; using std::endl;
+	const int minSize = 0x8; // must be > 4
 
-	unsigned int largeSize = (n.numLimbs() > numLimbs() ? n.numLimbs() : numLimbs()) - 1;
-	BigInt r(0U, n.numLimbs() + numLimbs() - 2);
-	BigInt carry(0U, n.numLimbs() + numLimbs() - 2);
-	for (int curDigit = 0; curDigit < r.numLimbs(); curDigit++) {
-		// ********************
-		// * interesting guts *
-		// ********************
-		int start = curDigit - largeSize;
-		start = start < 0 ? 0 : start;
-		int end = (curDigit < n.numLimbs() - 1 ? curDigit + 1 : n.numLimbs());
-		int multiplicand = curDigit - start;
-		unsigned long long curR = 0;
-		unsigned int farCarry = 0; // if curR overflows
-		for (int i = start; i < end && multiplicand < numLimbs(); i++, multiplicand = curDigit - i) {
-			unsigned long long p = curR;
-			curR += (unsigned long long)n.limbs[i] * limbs[multiplicand];
-			if (curR < p) {
-				farCarry ++;
-				//if (farCarry == 0) {
-				//	std::cout << "stop." << std::endl;
-				//}
-			}
+	// M = m_1 * x^(1 - p) + m_0 * x^(1 - 2p)
+	// N = n_1 * x^(1 - p) + n_0 * x^(1 - 2p)
 
-		}
-		r.limbs[curDigit] += (curR & 0xFFFFFFFF);
-		if (curDigit > 0) {
-			carry.limbs[curDigit - 1] += (curR >> 32);
-			if (curDigit > 1) {
-				//carry.limbs[curDigit - 2] += farCarry;
-			}
-		}
-
+	if (numLimbs() < minSize && n.numLimbs() < minSize) {
+		return this->baseMul(n);
 	}
-	r += carry;
-	return r;
+
+	int p;
+	// temp way to match size
+	if (n.numLimbs() > numLimbs()) { // num limbs / 2 rounded up
+		p = n.numLimbs() / 2 + n.numLimbs() % 2;
+	} else {
+		p = numLimbs() / 2 + numLimbs() % 2;
+	}
+
+	//if (p < minSize) {
+		BigInt a_1 = *this;
+		for (int i = p; i < numLimbs(); i++) {
+			a_1.set(0, i);
+		}
+		//a_1 >>= (32 + 32);
+		a_1.limbs.resize(p); // m_1 * x^(1 - p)
+		//a_1.truncate(); 
+
+		BigInt a_0 = *this;
+		for (int i = 0; i < p; i++) {
+			a_0.set(0, i);
+		}
+		a_0 <<= (p * 32 - 32 - 32);
+		a_0.truncate(); // m_0 / x^(p + 1)
+
+		BigInt b_1 = n;
+		for (int i = p; i < n.numLimbs(); i++) {
+			b_1.set(0, i);
+		}
+		//b_1 >>= (32 + 32);
+		b_1.limbs.resize(p); // n_1 * x^(1 - p)
+		//b_1.truncate(); 
+
+		BigInt b_0 = n;
+		for (int i = 0; i < p; i++) {
+			b_0.set(0, i);
+		}
+		b_0 <<= (p * 32 - 32 - 32);
+		b_0.truncate(); // n_0 / x^(p + 1)
+
+		BigInt c_2 = a_1.mulDigit(b_1); // c_2 = m_1 * n_1 * x^( 2 - 2p)
+		BigInt c_0 = a_0.mulDigit(b_0); // c_0 = m_0 * n_0 * x^(-2 - 2p)
+
+		a_1 >>= 64;                             // m_1 * (-1 - p)
+		BigInt c_1 = (a_1 + a_0);
+		b_1 >>= 64;                             // n_1 * (-1 - p)
+		BigInt t = (b_1 + b_0); 
+		c_1 = c_1.mulDigit(t);                  // (m_1 + m_0)(n_1 + n_0) * x^(-2p - 2)
+		c_2 >>= 128;
+		c_1 -= c_2;                             // ((m_1 + m_0)(n_1 + n_0) - r_2) * x^(-2p - 2)
+		c_1 -= c_0;                             // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(-2p - 2)
+
+		c_2 <<= 4 * 32;        // c_2 = m_1 * n_1 * x^(2-2p)
+		c_0 >>= (2 * p - 4) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
+		c_1 >>= (p - 4) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
+
+		c_0 += c_2; // c_0 = R
+		c_0 += c_1;
+		c_0.truncate();
+		return c_0;
+	//} else {
+	//	BigInt a_1 = *this;
+	//	for (int i = p; i < numLimbs(); i++) {
+	//		a_1.set(0, i);
+	//	}
+	//	//a_1 >>= (32 + 32);
+	//	a_1.truncate(); // m_1 * x^(1 - p)
+
+	//	BigInt a_0 = *this;
+	//	for (int i = 0; i < p; i++) {
+	//		a_0.set(0, i);
+	//	}
+	//	a_0 <<= (p * 32);
+	//	a_0.truncate(); // m_0 * x^(1 - p)
+
+	//	BigInt b_1 = n;
+	//	for (int i = p; i < n.numLimbs(); i++) {
+	//		b_1.set(0, i);
+	//	}
+	//	//b_1 >>= (32 + 32);
+	//	b_1.truncate(); // n_1 * x^(1 - p)
+
+	//	BigInt b_0 = n;
+	//	for (int i = 0; i < p; i++) {
+	//		b_0.set(0, i);
+	//	}
+	//	b_0 <<= (p * 32);
+	//	b_0.truncate(); // n_0 * x^(1 - p)
+
+	//	BigInt c_2 = a_1.mulDigit(b_1); // c_2 = m_1 * n_1 / x^(2p + 2)
+	//	BigInt c_0 = a_0.mulDigit(b_0); // c_0 = m_0 * n_0 / x^(2p + 2)
+
+	//	BigInt c_1 = (a_1 + a_0);
+	//	BigInt t = (b_1 + b_0); 
+	//	c_1 = c_1.mulDigit(t);          // (m_1 + m_0)(n_1 + n_0) * x^(2 - 2p)
+	//	c_1 -= c_2;                     // ((m_1 + m_0)(n_1 + n_0) - r_2) * x^(2 - 2p)
+	//	c_1 -= c_0;                     // ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0) * x^(2 - 2p)
+
+	//	//c_2 <<= 4 * 32;        // c_2 = m_1 * n_1 * x^(2-2p)
+	//	c_0 >>= (2 * p) * 32; // c_0 = m_0 * n_0 * x^(2 - 4p)
+	//	c_1 >>= (p) * 32;     // c_1 = x^(2 - 3p) * ((m_1 + m_0)(n_1 + n_0) - r_2 - r_0)
+
+	//	c_0 += c_2; // c_0 = R
+	//	c_0 += c_1;
+	//	c_0.truncate();
+	//	return c_0;
+	//}
 }
 
 bool BigInt::operator==(const BigInt &n) const {
@@ -384,6 +468,7 @@ bool BigInt::operator==(const BigInt &n) const {
 	}
 	for (int i = 0; i < numLimbs(); i++) {
 		if (limbs[i] != n.limbs[i]) {
+			std::cout << "stupid." << std::endl;
 			return false;
 		}
 	}
